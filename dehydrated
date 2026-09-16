@@ -1,15 +1,138 @@
 #!/bin/bash
+#
+# Issue and renew Let's Encrypt certificates with dehydrated, solving the DNS-01
+# challenge through the CloudFlare hook, then normalise ownership and permissions
+# on the certificate store so other containers sharing the volume can read it.
+#
+# Runs twice in a container's life: once synchronously at start (Dockerfile CMD)
+# and then daily from /etc/periodic/daily via busybox crond (02:00 local time).
+#
+# This script deliberately exits 0 even when issuance fails, so that a transient
+# CloudFlare or ACME outage does not tear the container down. Failure is reported
+# through the status file, which the HEALTHCHECK reads.
 
-cd /dehydrated
+set -uo pipefail
 
-./dehydrated --register --accept-terms
+BASEDIR=/dehydrated
+HOOK=hooks/cloudflare/hook.py
+STATUS_FILE=/run/dehydrated.status
 
-if [ -z $CF_HOST ]; then
-  ./dehydrated -c -t dns-01 -k 'hooks/cloudflare/hook.py'
+# Ownership applied to the certificate store. Defaults reproduce the historical
+# behaviour exactly. Note Alpine's nogroup is GID 65533 while nobody's own
+# primary group is GID 65534, so the default pair is intentionally mismatched
+# for backwards compatibility. Numeric values are passed straight through, so a
+# GID with no matching group entry works.
+PUID="${PUID:-nobody}"
+PGID="${PGID:-nogroup}"
+
+log()  { printf '%s\n' "$*"; }
+warn() { printf 'WARNING: %s\n' "$*" >&2; }
+err()  { printf 'ERROR: %s\n' "$*" >&2; }
+
+record_status() {
+  printf '%s %s\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"${STATUS_FILE}" 2>/dev/null \
+    || warn "could not write ${STATUS_FILE}"
+}
+
+cd "${BASEDIR}" || {
+  err "cannot enter ${BASEDIR}"
+  record_status FAIL
+  exit 1
+}
+
+# The hook reads CloudFlare credentials straight from the environment; nothing
+# here touches them. It prefers a zone-scoped token and only falls back to the
+# deprecated global key pair. Checking up front turns what would otherwise be a
+# failure partway through a challenge into one clear message. This also catches
+# CF_API_TOKEN being set but empty, which the hook treats as no credentials.
+if [ -n "${CF_API_TOKEN:-}" ]; then
+  :
+elif [ -n "${CF_EMAIL:-}" ] && [ -n "${CF_KEY:-}" ]; then
+  warn "using deprecated CF_EMAIL + CF_KEY authentication (a global API key)."
+  warn "prefer a zone-scoped token in CF_API_TOKEN. See README.md."
 else
-  ./dehydrated -c -d $CF_HOST -t dns-01 -k 'hooks/cloudflare/hook.py'
+  err "no CloudFlare credentials found in the environment."
+  err "set CF_API_TOKEN (preferred), or both CF_EMAIL and CF_KEY."
+  record_status FAIL
+  exit 0
 fi
 
-chown -R nobody:nogroup certs
-chmod -R ugo+r certs
-find certs -type d -exec chmod ugo+x {} \;
+# Domain selection.
+#
+#   CF_HOST unset or empty   domains are read from domains.txt
+#   CF_HOST contains " -d "  legacy form, the value carries its own -d flags
+#   otherwise                space-separated list of hostnames
+#
+# Word splitting below is deliberate, but pathname expansion is not: a wildcard
+# certificate such as "*.example.com" would otherwise glob against the working
+# directory. dehydrated guards its own domains.txt parser the same way.
+args=()
+if [ -z "${CF_HOST:-}" ]; then
+  log "CF_HOST not set: reading domains from ${BASEDIR}/domains.txt"
+else
+  set -f
+  case " ${CF_HOST} " in
+    *" -d "*)
+      warn "CF_HOST uses the legacy embedded '-d' form; a plain space-separated"
+      warn "list of hostnames is preferred. See README.md."
+      # Unquoted on purpose: the embedded flags must word-split into separate
+      # arguments. This is what makes the legacy form work.
+      # shellcheck disable=SC2086
+      args=(-d ${CF_HOST})
+      ;;
+    *)
+      # Unquoted on purpose: split the list into one -d per hostname, each of
+      # which is then quoted individually.
+      # shellcheck disable=SC2086
+      for host in ${CF_HOST}; do
+        args+=(-d "${host}")
+      done
+      ;;
+  esac
+  set +f
+fi
+
+# No separate --register step: "-c --accept-terms" registers the account on the
+# first run and is a no-op afterwards. Registering separately would take the
+# lockfile and make a live call to the CA on every run, which fails during a CA
+# outage even when no certificate needed renewing.
+#
+# The array is empty in domains-file mode. Under "set -u", plain "${args[@]}" on
+# an empty array is an unbound-variable error in bash before 4.4; the expansion
+# below is the portable form that yields nothing instead.
+log "Running dehydrated (dns-01 via ${HOOK})"
+if ./dehydrated -c --accept-terms -t dns-01 -k "${HOOK}" ${args[@]+"${args[@]}"}; then
+  run_status=OK
+  log "dehydrated finished successfully"
+else
+  rc=$?
+  run_status=FAIL
+  err "dehydrated exited ${rc}; certificates may not have been issued or renewed."
+  err "the container stays up and cron will retry. See the output above."
+fi
+
+# dehydrated sets "umask 077", so everything it writes is 0600 and directories
+# are 0700. The chmod below deliberately loosens the public material so that a
+# neighbouring container can read it, then takes the private keys back out of
+# world-readable.
+#
+# The key glob is prefix-only on purpose. dehydrated also produces
+# privkey-<timestamp>.pem-revoked and, with rollover enabled, privkey.roll.pem;
+# an extension-anchored glob such as privkey*.pem would miss those and silently
+# leave a key world-readable.
+#
+# certs/ is created by dehydrated only once it processes at least one
+# certificate, so an empty domains.txt with no CF_HOST leaves it absent. Guard
+# the whole block: without this, the trailing find fails and takes the container
+# down with it.
+if [ -d certs ]; then
+  chown -R "${PUID}:${PGID}" certs || warn "could not set ownership on certs"
+  chmod -R ugo+r certs || warn "could not relax permissions on certs"
+  find certs -type d -exec chmod ugo+x {} \; || warn "could not set directory permissions"
+  find certs -name 'privkey*' -exec chmod o-rwx {} \; || warn "could not restrict private keys"
+else
+  warn "no certs directory: nothing has been issued yet"
+fi
+
+record_status "${run_status}"
+exit 0
