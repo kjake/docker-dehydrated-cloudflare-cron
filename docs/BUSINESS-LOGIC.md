@@ -553,7 +553,11 @@ changed, and recorded nothing about what it produced.
 **Rule:** The composite `state_key` is the first 12 hex characters of the SHA-256 of the three
 upstream identities concatenated. It is recorded in `.upstream-state.json` only after a successful
 publish.
-**Enforced:** `.github/workflows/watch-upstream.yml`, the `resolve` and `record` steps.
+**Enforced:** `.github/workflows/watch-upstream.yml`, the `resolve` and `record` steps. State is
+written to a dedicated `upstream-state` branch, not the default branch: a ruleset requires a pull
+request there, and GitHub Actions cannot be granted a bypass on a personal repository. A run on
+2026-09-16 confirmed this by being rejected with `GH013 ... Changes must be made through a pull
+request` after a successful publish.
 **Why the ordering matters:** recording before the publish succeeded would mark a failed build as
 done and skip the retry on the next run.
 **Test:** force the publish job to fail; assert `.upstream-state.json` is unchanged and the next

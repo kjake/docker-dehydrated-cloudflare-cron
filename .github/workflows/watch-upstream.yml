@@ -27,6 +27,13 @@ concurrency:
 
 env:
   STATE_FILE: .upstream-state.json
+  # State lives on its own branch, not on the default branch. The ruleset
+  # protecting the default branch requires a pull request, and GitHub Actions
+  # cannot be granted a bypass on a personal repository (the API rejects it:
+  # "Actor GitHub Actions integration must be part of the ruleset source or
+  # owner organization"). Pushing here keeps the default branch fully protected
+  # and needs no long-lived credential.
+  STATE_BRANCH: upstream-state
 
 jobs:
   check:
@@ -82,14 +89,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ ! -f "${STATE_FILE}" ]; then
-            echo "No state file yet; treating as changed."
+          if git fetch --depth=1 origin "${STATE_BRANCH}" 2>/dev/null \
+             && git show "FETCH_HEAD:${STATE_FILE}" > "${RUNNER_TEMP}/previous.json" 2>/dev/null; then
+            previous_key=$(jq -r '.state_key // ""' "${RUNNER_TEMP}/previous.json")
+            previous_python=$(jq -r '.python_version // ""' "${RUNNER_TEMP}/previous.json")
+          else
+            echo "No state recorded on ${STATE_BRANCH} yet; treating as changed."
             echo "changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
-          previous_key=$(jq -r '.state_key // ""' "${STATE_FILE}")
-          previous_python=$(jq -r '.python_version // ""' "${STATE_FILE}")
 
           # The base image floats, so a Python major or minor jump arrives with
           # no warning. Surface it rather than letting it land silently.
@@ -145,16 +153,24 @@ jobs:
             --arg state_key "${STATE_KEY}" \
             --arg updated "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             '{$dehydrated_revision, $hook_revision, $base_digest, $python_version, $state_key, $updated}' \
-            > "${STATE_FILE}"
-          cat "${STATE_FILE}"
+            > "${RUNNER_TEMP}/state.json"
+          cat "${RUNNER_TEMP}/state.json"
 
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+          # Switch to the state branch, creating it on first use.
+          if git fetch --depth=1 origin "${STATE_BRANCH}" 2>/dev/null; then
+            git checkout -B "${STATE_BRANCH}" FETCH_HEAD
+          else
+            echo "Creating ${STATE_BRANCH}."
+            git checkout -B "${STATE_BRANCH}"
+          fi
+
+          cp "${RUNNER_TEMP}/state.json" "${STATE_FILE}"
           git add "${STATE_FILE}"
           git commit -m "chore: publish image for upstream state ${STATE_KEY}"
-          # main may have moved while the multi-platform build ran.
-          git pull --rebase --autostash origin main
-          git push
+          git push origin "${STATE_BRANCH}"
 
   # Nothing changed upstream, so no commit was made. If that goes on long enough
   # GitHub disables this very workflow, after which nothing would ever rebuild.
@@ -173,6 +189,17 @@ jobs:
       - name: Keep the repository active
         run: |
           set -euo pipefail
+
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+          if git fetch --depth=1 origin "${STATE_BRANCH}" 2>/dev/null; then
+            git checkout -B "${STATE_BRANCH}" FETCH_HEAD
+          else
+            echo "No state branch yet; nothing has been published, so nothing to keep alive."
+            exit 0
+          fi
+
           last=$(git log -1 --format=%ct)
           now=$(date -u +%s)
           age_days=$(( (now - last) / 86400 ))
@@ -185,7 +212,5 @@ jobs:
             exit 0
           fi
 
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
           git commit --allow-empty -m 'chore: keepalive so scheduled workflows stay enabled'
-          git push
+          git push origin "${STATE_BRANCH}"
