@@ -120,7 +120,7 @@ vulnerabilities.
 | `0 */12 * * *` | `watch-upstream.yml` | Every 12 hours UTC, upstream check |
 | `24 5 * * 4` | `anchore.yml` | Thursdays 05:24 UTC, vulnerability scan |
 | `weekly` | `dependabot.yml` | GitHub Actions update check |
-| `master` | all workflows | The only branch any workflow reacts to |
+| `main` | all workflows | The only branch any workflow reacts to |
 | `0 2 * * *` (base image) | `alpine-baselayout` crontab | The in-container daily job, 02:00 local |
 
 The former `0 6 * * 1` weekly rebuild was retired in favour of the watcher.

@@ -2,13 +2,13 @@
 
 > Surface type: background job (GitHub Actions workflow)
 > Address: workflow `Build check`, job `build`, file `.github/workflows/build-check.yml`
-> Schedule: every pull request targeting `master`
+> Schedule: every pull request targeting `main`
 > Consumed by: GitHub's merge gating, and by the Dependabot automerge workflow
 > Auth or permissions: `contents: read`. No secrets; it never pushes.
 
 ## Overview
 
-The required status check on `master`, and this repository's only automated test suite.
+The required status check on `main`, and this repository's only automated test suite.
 
 It exists for two reasons. It is what makes Dependabot auto-merge safe: without a required check
 that can actually fail, `gh pr merge --auto` finds a pull request immediately mergeable and merges
@@ -107,7 +107,7 @@ the entire safety mechanism for automerge.
 
 ## Business Rules
 
-1. Automerge is safe only while this check is required on `master`. See
+1. Automerge is safe only while this check is required on `main`. See
    [BL-CI-011](../../BUSINESS-LOGIC.md#bl-ci-011).
 2. Given a pull request that breaks the Docker build, when this workflow runs, then the job fails
    and the merge is blocked. (`.github/workflows/build-check.yml`, the `Build image` step)

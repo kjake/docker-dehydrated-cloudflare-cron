@@ -152,8 +152,8 @@ jobs:
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add "${STATE_FILE}"
           git commit -m "chore: publish image for upstream state ${STATE_KEY}"
-          # master may have moved while the multi-platform build ran.
-          git pull --rebase --autostash origin master
+          # main may have moved while the multi-platform build ran.
+          git pull --rebase --autostash origin main
           git push
 
   # Nothing changed upstream, so no commit was made. If that goes on long enough

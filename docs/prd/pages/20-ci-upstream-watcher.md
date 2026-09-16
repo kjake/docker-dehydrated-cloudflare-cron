@@ -42,7 +42,7 @@ The two upstreams use different default branch names. Neither is assumed.
 
 | Name | Type | Required | Default | Notes |
 |---|---|---|---|---|
-| `STATE_FILE` | workflow env | Yes | `.upstream-state.json` | Recorded state, committed to `master` |
+| `STATE_FILE` | workflow env | Yes | `.upstream-state.json` | Recorded state, committed to `main` |
 | `GITHUB_TOKEN` | secret | Yes | provided | Used by `gh api` for the two commit lookups and for pushing |
 | `DOCKER_USERNAME`, `DOCKER_PASSWORD` | secrets | Yes, for publishing | none | Not read here; inherited by the publish job |
 
@@ -73,7 +73,7 @@ Job outputs, consumed by the publish and record jobs:
 - Ordering: state is recorded **only after** a successful publish. Recording earlier would mark a
   failed build as done and skip the retry. See
   [BL-CI-010](../../BUSINESS-LOGIC.md#bl-ci-010).
-- Race handling: `master` may have moved during the multi-platform build, so the record job
+- Race handling: `main` may have moved during the multi-platform build, so the record job
   rebases before pushing.
 
 ### Base image Python version changed
@@ -105,7 +105,7 @@ Job outputs, consumed by the publish and record jobs:
 | Docker Hub registry | Network service | Reading the `python:alpine` manifest digest | Job fails; next run retries |
 | `.github/workflows/docker.yml` | Reusable workflow | Performs the actual build and push | State is not recorded, so the next run retries |
 | `jq`, `sha256sum`, `gh` | Runner tools | State handling and API access | Preinstalled on `ubuntu-latest` |
-| Write access to `master` | Repository permission | State commit and keepalive | Without it the watcher rebuilds repeatedly, never recording success |
+| Write access to `main` | Repository permission | State commit and keepalive | Without it the watcher rebuilds repeatedly, never recording success |
 
 ## Relationships
 

@@ -2,7 +2,7 @@ name: Docker
 
 # Publishes the multi-platform image to Docker Hub.
 #
-# Triggered by a push to master, manually, or by the upstream watcher when it
+# Triggered by a push to main, manually, or by the upstream watcher when it
 # detects that dehydrated, the CloudFlare hook, or the base image has moved.
 # The watcher replaced a blind weekly rebuild: this now runs when something has
 # actually changed, and records what went into the image.
@@ -29,7 +29,7 @@ on:
         default: ''
   push:
     branches:
-      - master
+      - main
     # The watcher commits the state file after a successful publish. Rebuilding
     # for that commit would be an infinite loop of no-op builds.
     paths-ignore:

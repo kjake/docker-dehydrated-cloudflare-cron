@@ -3,7 +3,7 @@ name: Dependabot auto-merge
 # Merges Dependabot's grouped action bumps without manual approval.
 #
 # Safety here rests entirely on the "build" check from build-check.yml being a
-# required status check on master. Without it, "gh pr merge --auto" finds the
+# required status check on main. Without it, "gh pr merge --auto" finds the
 # pull request immediately mergeable and merges on the spot, unreviewed and
 # unbuilt. With it, a bump that breaks the image blocks its own merge.
 
