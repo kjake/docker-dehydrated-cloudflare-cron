@@ -15,29 +15,41 @@ on:
   schedule:
     - cron: '24 5 * * 4'
 
+# The repository default is already write, so this is least-privilege hygiene
+# rather than a fix. security-events: write is what the SARIF upload needs.
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   Anchore-Build-Scan:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout the code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@v4
     - name: build local container
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v7
       with:
         tags: localbuild/testimage:latest
         push: false
         load: true
     - name: Scan image
-      uses: anchore/scan-action@v3
+      id: scan
+      uses: anchore/scan-action@v7
       with:
         image: "localbuild/testimage:latest"
         output-format: sarif
         fail-build: false
         severity-cutoff: critical
         only-fixed: true
+    # Take the report path from the action's own output rather than assuming a
+    # filename. scan-action stopped writing "results.sarif" at the workspace
+    # root at some point inside the v3 tag, which is what broke this step from
+    # 2026-04 onward: the scan kept succeeding and the upload kept failing with
+    # "Path does not exist: results.sarif".
     - name: Upload Anchore Scan Report
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       with:
-        sarif_file: results.sarif
+        sarif_file: ${{ steps.scan.outputs.sarif }}

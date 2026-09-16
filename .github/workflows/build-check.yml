@@ -1,0 +1,108 @@
+name: Build check
+
+# Required status check on master. This is what makes Dependabot auto-merge safe:
+# an action bump that breaks the build fails here and blocks its own merge.
+#
+# Deliberately separate from the Anchore workflow. That one also builds, but its
+# SARIF upload can fail for reasons unrelated to this repository, which would
+# block merges for the wrong reason.
+
+on:
+  pull_request:
+    branches: [ master ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Single platform on purpose: this gates correctness, not portability, and
+      # emulating seven architectures would make every PR slow.
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          push: false
+          load: true
+          tags: dehydrated-cloudflare-cron:pr
+
+      - name: Smoke test the image
+        run: |
+          docker run --rm dehydrated-cloudflare-cron:pr bash -c '
+            set -e
+            test -x /etc/periodic/daily/dehydrated
+            test -x /usr/local/bin/healthcheck
+            test -f /dehydrated/domains.txt
+            test ! -s /dehydrated/domains.txt
+            test -x /dehydrated/dehydrated
+            test -f /dehydrated/hooks/cloudflare/hook.py
+            command -v crond >/dev/null
+            command -v bash >/dev/null
+            ! command -v git >/dev/null
+            cat /etc/dehydrated-build-info
+            # No run has happened yet, so the healthcheck must report unhealthy.
+            if /usr/local/bin/healthcheck; then
+              echo "healthcheck passed with no status file" >&2
+              exit 1
+            fi
+            echo SMOKE-OK
+          '
+
+      # Regression test for the failure mode where the renewal script exits
+      # non-zero and takes the container down with it. With no credentials the
+      # preflight must fail loudly, record FAIL, and still exit 0.
+      - name: Renewal script fails soft without credentials
+        run: |
+          out=$(docker run --rm dehydrated-cloudflare-cron:pr bash -c \
+            '/etc/periodic/daily/dehydrated; echo "exit=$?"; cat /run/dehydrated.status' 2>&1)
+          echo "$out"
+          echo "$out" | grep -q 'exit=0' || { echo "script must exit 0" >&2; exit 1; }
+          echo "$out" | grep -q '^FAIL ' || { echo "status must be FAIL" >&2; exit 1; }
+          echo "$out" | grep -q 'no CloudFlare credentials' || { echo "missing preflight error" >&2; exit 1; }
+
+      # Domains-file mode passes no -d arguments at all, which means expanding an
+      # empty bash array under "set -u". Getting that wrong aborts the script
+      # before it records a status, leaving the container permanently unhealthy
+      # while looking fine. Regression test for exactly that.
+      - name: Domains-file mode builds an empty argument list
+        run: |
+          out=$(docker run --rm dehydrated-cloudflare-cron:pr bash -c \
+            'CF_API_TOKEN=x /etc/periodic/daily/dehydrated 2>&1; echo "exit=$?"' || true)
+          echo "$out"
+          echo "$out" | grep -q 'unbound variable' && { echo "empty array expansion regressed" >&2; exit 1; }
+          echo "$out" | grep -q 'reading domains from' || { echo "did not select domains-file mode" >&2; exit 1; }
+          echo "$out" | grep -q 'exit=0' || { echo "script must exit 0" >&2; exit 1; }
+
+      - name: CF_HOST forms resolve correctly
+        run: |
+          run_case() {
+            docker run --rm -e "CF_HOST=$1" dehydrated-cloudflare-cron:pr bash -c '
+              set -f
+              args=()
+              if [ -n "${CF_HOST:-}" ]; then
+                case " ${CF_HOST} " in
+                  *" -d "*) args=(-d ${CF_HOST}) ;;
+                  *) for h in ${CF_HOST}; do args+=(-d "$h"); done ;;
+                esac
+              fi
+              printf "%s " "${args[@]}"
+            '
+          }
+          got=$(run_case 'a.tld -d b.tld'); echo "legacy: $got"
+          [ "$got" = "-d a.tld -d b.tld " ] || { echo "legacy form regressed" >&2; exit 1; }
+          got=$(run_case 'a.tld b.tld'); echo "list:   $got"
+          [ "$got" = "-d a.tld -d b.tld " ] || { echo "list form wrong" >&2; exit 1; }
+          got=$(run_case '*.example.com'); echo "glob:   $got"
+          [ "$got" = "-d *.example.com " ] || { echo "wildcard was glob-expanded" >&2; exit 1; }
