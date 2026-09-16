@@ -73,8 +73,8 @@ Job outputs, consumed by the publish and record jobs:
 - Ordering: state is recorded **only after** a successful publish. Recording earlier would mark a
   failed build as done and skip the retry. See
   [BL-CI-010](../../BUSINESS-LOGIC.md#bl-ci-010).
-- Race handling: `main` may have moved during the multi-platform build, so the record job
-  rebases before pushing.
+- No race with the default branch: state is written to a dedicated `upstream-state` branch,
+  so a build running while `main` moves cannot conflict.
 
 ### Base image Python version changed
 
@@ -105,7 +105,7 @@ Job outputs, consumed by the publish and record jobs:
 | Docker Hub registry | Network service | Reading the `python:alpine` manifest digest | Job fails; next run retries |
 | `.github/workflows/docker.yml` | Reusable workflow | Performs the actual build and push | State is not recorded, so the next run retries |
 | `jq`, `sha256sum`, `gh` | Runner tools | State handling and API access | Preinstalled on `ubuntu-latest` |
-| Write access to `main` | Repository permission | State commit and keepalive | Without it the watcher rebuilds repeatedly, never recording success |
+| Write access to `upstream-state` | Repository permission | State commit and keepalive | Without it the watcher rebuilds repeatedly, never recording success |
 
 ## Relationships
 

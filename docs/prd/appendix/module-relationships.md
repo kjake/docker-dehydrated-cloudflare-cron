@@ -50,7 +50,7 @@ docker healthcheck
 schedule (12h) ─> watch-upstream.yml
                     ├── check      resolve 3 upstream identities, compare to .upstream-state.json
                     ├── publish ──> docker.yml (workflow_call)  ──> Docker Hub
-                    ├── record     commit .upstream-state.json   (also keeps repo active)
+                    ├── record     commit state to upstream-state branch (keeps repo active)
                     └── heartbeat  empty commit if quiet 50 days
 
 push to main ──> docker.yml            (paths-ignore: state file, docs, markdown, LICENSE)
@@ -88,7 +88,7 @@ check, the automerge step merges immediately and unreviewed.
 | `/dehydrated/domains.txt` | operator, by bind mount | upstream client | Only if mounted |
 | `/run/dehydrated.status` | renewal script | `healthcheck` | No, container-local |
 | `/etc/dehydrated-build-info` | the build | humans | Baked into the image |
-| `.upstream-state.json` | `watch-upstream.yml` | `watch-upstream.yml` | Yes, committed to `main` |
+| `.upstream-state.json` | `watch-upstream.yml` | `watch-upstream.yml` | Yes, on the `upstream-state` branch |
 | `results.sarif` | `anchore/scan-action` | `upload-sarif` | No, runner-local |
 
 ## Cross-unit dependencies
