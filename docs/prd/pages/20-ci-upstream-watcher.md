@@ -42,7 +42,8 @@ The two upstreams use different default branch names. Neither is assumed.
 
 | Name | Type | Required | Default | Notes |
 |---|---|---|---|---|
-| `STATE_FILE` | workflow env | Yes | `.upstream-state.json` | Recorded state, committed to `main` |
+| `STATE_FILE` | workflow env | Yes | `.upstream-state.json` | Recorded state |
+| `STATE_BRANCH` | workflow env | Yes | `upstream-state` | Branch the state file lives on, kept off the protected default branch |
 | `GITHUB_TOKEN` | secret | Yes | provided | Used by `gh api` for the two commit lookups and for pushing |
 | `DOCKER_USERNAME`, `DOCKER_PASSWORD` | secrets | Yes, for publishing | none | Not read here; inherited by the publish job |
 
