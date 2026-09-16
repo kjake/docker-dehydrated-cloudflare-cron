@@ -1,0 +1,191 @@
+name: Watch upstreams
+
+# Replaces the old blind weekly rebuild.
+#
+# Everything this image contains is cloned or pulled unpinned at build time, so
+# nothing in this repository records what a published image holds. This workflow
+# watches the three upstream inputs and rebuilds only when one of them actually
+# moves, then commits what it built.
+#
+# That commit is load-bearing beyond bookkeeping: GitHub disables scheduled
+# workflows in public repositories after 60 days with no repository activity,
+# which is exactly how this repo's CI died in 2026. The state commit, plus the
+# heartbeat below, keeps the repository active so the schedule survives.
+
+on:
+  schedule:
+    - cron: '0 */12 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: watch-upstream
+  # Not cancel-in-progress: a run may be midway through publishing an image.
+  cancel-in-progress: false
+
+env:
+  STATE_FILE: .upstream-state.json
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.compare.outputs.changed }}
+      dehydrated_revision: ${{ steps.resolve.outputs.dehydrated_revision }}
+      hook_revision: ${{ steps.resolve.outputs.hook_revision }}
+      base_digest: ${{ steps.resolve.outputs.base_digest }}
+      python_version: ${{ steps.resolve.outputs.python_version }}
+      state_key: ${{ steps.resolve.outputs.state_key }}
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v7
+
+      # Default branches differ between the two upstreams: dehydrated uses
+      # master, the hook uses main. Neither is assumed.
+      - name: Resolve upstream identities
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          dehydrated_revision=$(gh api repos/dehydrated-io/dehydrated/commits/master --jq .sha)
+          hook_revision=$(gh api repos/SeattleDevs/letsencrypt-cloudflare-hook/commits/main --jq .sha)
+          base_digest=$(docker buildx imagetools inspect python:alpine --format '{{.Manifest.Digest}}')
+          python_version=$(docker run --rm python:alpine python3 -c \
+            'import sys; print("%d.%d" % sys.version_info[:2])')
+
+          state_key=$(printf '%s\n%s\n%s\n' \
+            "${dehydrated_revision}" "${hook_revision}" "${base_digest}" \
+            | sha256sum | cut -c1-12)
+
+          {
+            echo "dehydrated_revision=${dehydrated_revision}"
+            echo "hook_revision=${hook_revision}"
+            echo "base_digest=${base_digest}"
+            echo "python_version=${python_version}"
+            echo "state_key=${state_key}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "dehydrated : ${dehydrated_revision}"
+          echo "hook       : ${hook_revision}"
+          echo "base       : ${base_digest} (Python ${python_version})"
+          echo "state key  : ${state_key}"
+
+      - name: Compare against recorded state
+        id: compare
+        env:
+          STATE_KEY: ${{ steps.resolve.outputs.state_key }}
+          PYTHON_VERSION: ${{ steps.resolve.outputs.python_version }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "${STATE_FILE}" ]; then
+            echo "No state file yet; treating as changed."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          previous_key=$(jq -r '.state_key // ""' "${STATE_FILE}")
+          previous_python=$(jq -r '.python_version // ""' "${STATE_FILE}")
+
+          # The base image floats, so a Python major or minor jump arrives with
+          # no warning. Surface it rather than letting it land silently.
+          if [ -n "${previous_python}" ] && [ "${previous_python}" != "${PYTHON_VERSION}" ]; then
+            echo "::notice title=Python version changed::Base image moved from Python ${previous_python} to ${PYTHON_VERSION}"
+          fi
+
+          if [ "${previous_key}" = "${STATE_KEY}" ]; then
+            echo "No upstream changes since ${previous_key}."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Upstream changed: ${previous_key:-none} -> ${STATE_KEY}"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    needs: check
+    if: needs.check.outputs.changed == 'true'
+    uses: ./.github/workflows/docker.yml
+    with:
+      dehydrated_revision: ${{ needs.check.outputs.dehydrated_revision }}
+      hook_revision: ${{ needs.check.outputs.hook_revision }}
+      base_digest: ${{ needs.check.outputs.base_digest }}
+      state_key: ${{ needs.check.outputs.state_key }}
+    secrets: inherit
+
+  # Only recorded after a successful publish, so a failed build is retried on the
+  # next run rather than being marked as done.
+  record:
+    needs: [check, publish]
+    if: needs.check.outputs.changed == 'true' && needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v7
+
+      - name: Record what was published
+        env:
+          DEHYDRATED_REVISION: ${{ needs.check.outputs.dehydrated_revision }}
+          HOOK_REVISION: ${{ needs.check.outputs.hook_revision }}
+          BASE_DIGEST: ${{ needs.check.outputs.base_digest }}
+          PYTHON_VERSION: ${{ needs.check.outputs.python_version }}
+          STATE_KEY: ${{ needs.check.outputs.state_key }}
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg dehydrated_revision "${DEHYDRATED_REVISION}" \
+            --arg hook_revision "${HOOK_REVISION}" \
+            --arg base_digest "${BASE_DIGEST}" \
+            --arg python_version "${PYTHON_VERSION}" \
+            --arg state_key "${STATE_KEY}" \
+            --arg updated "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{$dehydrated_revision, $hook_revision, $base_digest, $python_version, $state_key, $updated}' \
+            > "${STATE_FILE}"
+          cat "${STATE_FILE}"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add "${STATE_FILE}"
+          git commit -m "chore: publish image for upstream state ${STATE_KEY}"
+          # master may have moved while the multi-platform build ran.
+          git pull --rebase --autostash origin master
+          git push
+
+  # Nothing changed upstream, so no commit was made. If that goes on long enough
+  # GitHub disables this very workflow, after which nothing would ever rebuild.
+  heartbeat:
+    needs: check
+    if: needs.check.outputs.changed == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Keep the repository active
+        run: |
+          set -euo pipefail
+          last=$(git log -1 --format=%ct)
+          now=$(date -u +%s)
+          age_days=$(( (now - last) / 86400 ))
+          echo "Last commit was ${age_days} day(s) ago."
+
+          # GitHub disables scheduled workflows after 60 days of inactivity.
+          # 50 leaves room for a couple of missed runs.
+          if [ "${age_days}" -lt 50 ]; then
+            echo "Recent enough; nothing to do."
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git commit --allow-empty -m 'chore: keepalive so scheduled workflows stay enabled'
+          git push

@@ -1,14 +1,48 @@
 name: Docker
 
+# Publishes the multi-platform image to Docker Hub.
+#
+# Triggered by a push to master, manually, or by the upstream watcher when it
+# detects that dehydrated, the CloudFlare hook, or the base image has moved.
+# The watcher replaced a blind weekly rebuild: this now runs when something has
+# actually changed, and records what went into the image.
+
 on:
-  schedule:
-    - cron: '0 6 * * 1'
+  workflow_call:
+    inputs:
+      dehydrated_revision:
+        type: string
+        required: false
+        default: unknown
+      hook_revision:
+        type: string
+        required: false
+        default: unknown
+      base_digest:
+        type: string
+        required: false
+        default: unknown
+      state_key:
+        description: Composite identity of the three upstreams; becomes an image tag.
+        type: string
+        required: false
+        default: ''
   push:
     branches:
       - master
+    # The watcher commits the state file after a successful publish. Rebuilding
+    # for that commit would be an infinite loop of no-op builds.
+    paths-ignore:
+      - '.upstream-state.json'
+      - 'docs/**'
+      - '**.md'
+      - 'LICENSE'
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
-  # TODO: Change variable to your image's name.
   IMAGE_NAME: kjake/dehydrated-cloudflare-cron
 
 jobs:
@@ -17,19 +51,43 @@ jobs:
 
     steps:
       - name: Checkout the code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
+
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # The immutable tag is derived from all three upstream identities, not from
+      # a single one. A tag keyed on dehydrated alone would be reused when only
+      # the base image moved, silently overwriting a previous build and
+      # destroying its value for rollback.
+      - name: Compute tags
+        id: tags
+        env:
+          STATE_KEY: ${{ inputs.state_key }}
+        run: |
+          tags="${IMAGE_NAME}:latest"
+          if [ -n "${STATE_KEY}" ]; then
+            tags="${tags},${IMAGE_NAME}:u${STATE_KEY}"
+          fi
+          echo "tags=${tags}" >> "$GITHUB_OUTPUT"
+          echo "Publishing: ${tags}"
+
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           platforms: linux/386,linux/amd64,linux/arm64/v8,linux/arm/v6,linux/arm/v7,linux/ppc64le,linux/s390x
-          tags: ${{ env.IMAGE_NAME }}:latest
+          tags: ${{ steps.tags.outputs.tags }}
           push: true
+          build-args: |
+            DEHYDRATED_REVISION=${{ inputs.dehydrated_revision }}
+            HOOK_REVISION=${{ inputs.hook_revision }}
+            BASE_DIGEST=${{ inputs.base_digest }}
