@@ -112,10 +112,10 @@ produces or guards the artifact.
 | # | Job | Schedule | Trigger | Writes | Doc |
 |---|---|---|---|---|---|
 | 1 | Certificate renewal | container start, then daily at 02:00 container-local | `Dockerfile` CMD, `/etc/periodic/daily` | `/dehydrated/certs`, `/dehydrated/accounts`, `/run/dehydrated.status` | [->](./pages/03-certificate-renewal-job.md) |
-| 2 | Upstream watcher | `0 */12 * * *` plus manual | schedule, `workflow_dispatch` | `.upstream-state.json`, commits to `master` | [->](./pages/20-ci-upstream-watcher.md) |
-| 3 | Image publish | on demand from the watcher, plus push to `master` | `workflow_call`, `push`, `workflow_dispatch` | Docker Hub tags | [->](./pages/21-ci-image-publish.md) |
-| 4 | Vulnerability scan | `24 5 * * 4` plus push and PR to `master` | schedule, `push`, `pull_request` | GitHub code scanning SARIF | [->](./pages/22-ci-vulnerability-scan.md) |
-| 5 | Build check | every pull request to `master` | `pull_request` | required status check | [->](./pages/23-ci-build-check.md) |
+| 2 | Upstream watcher | `0 */12 * * *` plus manual | schedule, `workflow_dispatch` | `.upstream-state.json`, commits to `main` | [->](./pages/20-ci-upstream-watcher.md) |
+| 3 | Image publish | on demand from the watcher, plus push to `main` | `workflow_call`, `push`, `workflow_dispatch` | Docker Hub tags | [->](./pages/21-ci-image-publish.md) |
+| 4 | Vulnerability scan | `24 5 * * 4` plus push and PR to `main` | schedule, `push`, `pull_request` | GitHub code scanning SARIF | [->](./pages/22-ci-vulnerability-scan.md) |
+| 5 | Build check | every pull request to `main` | `pull_request` | required status check | [->](./pages/23-ci-build-check.md) |
 | 6 | Dependency automation | weekly | Dependabot, `pull_request` | merged pull requests | [->](./pages/24-ci-dependency-automation.md) |
 
 ## Permission Model

@@ -463,10 +463,10 @@ certificates at `0600` and break every consumer that reads the shared volume.
 > **RETIRED 2026-09-16.** The blind weekly rebuild was replaced by a change-triggered watcher. See [BL-CI-009](#bl-ci-009).
 > The original rule is kept verbatim below because rule IDs are stable.
 
-**Rule:** The image is built and pushed on every push to `master` and every Monday at
+**Rule:** The image is built and pushed on every push to `main` and every Monday at
 06:00 UTC.
 **Enforced:** `.github/workflows/docker.yml:5` (`cron: '0 6 * * 1'`),
-`.github/workflows/docker.yml:6-8` (push to `master`).
+`.github/workflows/docker.yml:6-8` (push to `main`).
 **Why it matters:** the weekly schedule is the mechanism that picks up new upstream commits
 from the unpinned clones in [BL-IMG-004](#bl-img-004) and [BL-IMG-005](#bl-img-005).
 
@@ -512,7 +512,7 @@ surfaced.
 
 ### BL-CI-007
 
-**Rule:** The scan runs on every push to `master`, every pull request targeting `master`,
+**Rule:** The scan runs on every push to `main`, every pull request targeting `main`,
 and every Thursday at 05:24 UTC.
 **Enforced:** `.github/workflows/anchore.yml:10-16`.
 
@@ -569,7 +569,7 @@ Dockerfile `RUN` line, so it cannot see either upstream project. The base image 
 version to bump. Actions are the only dependency here it can meaningfully track, and they had
 rotted by up to four major versions.
 **Safety precondition:** automerge is only safe because the `build` check from
-`build-check.yml` is a required status check on `master`. Without a required check that can fail,
+`build-check.yml` is a required status check on `main`. Without a required check that can fail,
 `gh pr merge --auto` finds the pull request immediately mergeable and merges it on the spot,
 unreviewed and unbuilt.
 **Test:** open a pull request that breaks the Docker build; assert it is not merged.

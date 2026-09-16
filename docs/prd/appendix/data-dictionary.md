@@ -105,7 +105,7 @@ first run completes, which the health check's start period accommodates. Contain
 
 ## `.upstream-state.json`
 
-Committed to `master` by the watcher after a successful publish. This commit is also what keeps
+Committed to `main` by the watcher after a successful publish. This commit is also what keeps
 the repository active enough that GitHub does not disable the schedule.
 
 | Field | Type | Example |

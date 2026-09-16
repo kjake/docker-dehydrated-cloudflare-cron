@@ -34,8 +34,8 @@ installed as an outbound client for the upstream ACME code. Affirmative finding,
 | 19 | File at runtime | `/run/dehydrated.status` | `dehydrated` | Root | `healthcheck` |
 | 20 | File in repo | `.upstream-state.json` | `watch-upstream.yml` | Public | The watcher |
 | 21 | Workflow | `watch-upstream.yml`, jobs `check` / `publish` / `record` / `heartbeat` | itself | `contents: write` | Scheduler, manual dispatch |
-| 22 | Workflow | `docker.yml`, job `push` | itself | Repository secrets | Watcher, `master` pushes |
-| 23 | Workflow | `anchore.yml`, job `Anchore-Build-Scan` | itself | `security-events: write` | Scheduler, `master`, pull requests |
+| 22 | Workflow | `docker.yml`, job `push` | itself | Repository secrets | Watcher, `main` pushes |
+| 23 | Workflow | `anchore.yml`, job `Anchore-Build-Scan` | itself | `security-events: write` | Scheduler, `main`, pull requests |
 | 24 | Workflow | `build-check.yml`, job `build` | itself | `contents: read` | Pull requests. **Required status check** |
 | 25 | Workflow | `dependabot-automerge.yml`, job `automerge` | itself | `contents`/`pull-requests: write` | Dependabot pull requests |
 

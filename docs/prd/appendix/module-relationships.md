@@ -53,7 +53,7 @@ schedule (12h) ─> watch-upstream.yml
                     ├── record     commit .upstream-state.json   (also keeps repo active)
                     └── heartbeat  empty commit if quiet 50 days
 
-push to master ──> docker.yml            (paths-ignore: state file, docs, markdown, LICENSE)
+push to main ──> docker.yml            (paths-ignore: state file, docs, markdown, LICENSE)
                └─> anchore.yml           build + Grype + SARIF
 
 pull request ────> build-check.yml       REQUIRED CHECK: build + 3 test steps
@@ -88,7 +88,7 @@ check, the automerge step merges immediately and unreviewed.
 | `/dehydrated/domains.txt` | operator, by bind mount | upstream client | Only if mounted |
 | `/run/dehydrated.status` | renewal script | `healthcheck` | No, container-local |
 | `/etc/dehydrated-build-info` | the build | humans | Baked into the image |
-| `.upstream-state.json` | `watch-upstream.yml` | `watch-upstream.yml` | Yes, committed to `master` |
+| `.upstream-state.json` | `watch-upstream.yml` | `watch-upstream.yml` | Yes, committed to `main` |
 | `results.sarif` | `anchore/scan-action` | `upload-sarif` | No, runner-local |
 
 ## Cross-unit dependencies

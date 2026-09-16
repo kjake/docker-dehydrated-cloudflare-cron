@@ -2,8 +2,8 @@
 
 > Surface type: background job (GitHub Actions workflow)
 > Address: workflow `Docker`, job `push`, file `.github/workflows/docker.yml`
-> Triggers: called by the upstream watcher, plus every push to `master` (excluding docs and state), plus `workflow_dispatch`
-> Consumed by: the watcher, the `master` branch, and every operator who pulls the image
+> Triggers: called by the upstream watcher, plus every push to `main` (excluding docs and state), plus `workflow_dispatch`
+> Consumed by: the watcher, the `main` branch, and every operator who pulls the image
 > Auth or permissions: `contents: read`. Docker Hub credentials from the `DOCKER_USERNAME` and `DOCKER_PASSWORD` secrets, reaching this workflow via `secrets: inherit` when called.
 
 ## Overview
@@ -51,9 +51,9 @@ removed in 9a4a1cd, and remains out.
 - Success: the watcher then records the state. A failure leaves the state unrecorded, so the next
   watcher run retries rather than skipping.
 
-### Push to master
+### Push to main
 
-- Trigger: a push to `master` that touches something other than `.upstream-state.json`, `docs/**`,
+- Trigger: a push to `main` that touches something other than `.upstream-state.json`, `docs/**`,
   `**.md`, or `LICENSE`.
 - Behavior: identical build, but `state_key` is empty so only `latest` is published.
 - Why the exclusions: the watcher commits the state file after a successful publish. Without

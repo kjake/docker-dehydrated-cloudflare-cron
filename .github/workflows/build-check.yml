@@ -1,6 +1,6 @@
 name: Build check
 
-# Required status check on master. This is what makes Dependabot auto-merge safe:
+# Required status check on main. This is what makes Dependabot auto-merge safe:
 # an action bump that breaks the build fails here and blocks its own merge.
 #
 # Deliberately separate from the Anchore workflow. That one also builds, but its
@@ -9,7 +9,7 @@ name: Build check
 
 on:
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
 
 permissions:
   contents: read
