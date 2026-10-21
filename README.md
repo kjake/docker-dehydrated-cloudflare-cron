@@ -56,7 +56,8 @@ docker create \
   kjake/dehydrated-cloudflare-cron
 ```
 
-Then start the container, which runs once at start and daily at 02:00 container-local time after that:
+Then start the container, which runs once at start and daily at 02:00 container-local time after that.
+That is UTC unless you add `-e TZ=Area/City` (for example `-e TZ=America/New_York`) to `docker create`:
 ```shell
 docker start dehydrated
 ```
