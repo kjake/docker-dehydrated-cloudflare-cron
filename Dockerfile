@@ -18,6 +18,10 @@ LABEL org.opencontainers.image.source="https://github.com/kjake/docker-dehydrate
       net.kjake.hook.revision="${HOOK_REVISION}" \
       net.kjake.base.digest="${BASE_DIGEST}"
 
+# Point the hook's requests library at the system CA bundle, which Wolfi keeps
+# patched, rather than the copy vendored by pip-installed certifi.
+ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+
 COPY dehydrated /etc/periodic/daily/dehydrated
 COPY healthcheck /usr/local/bin/healthcheck
 
