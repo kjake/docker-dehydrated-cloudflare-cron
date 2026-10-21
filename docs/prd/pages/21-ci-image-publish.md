@@ -19,11 +19,11 @@ only knows *how*.
 
 ```
 1  actions/checkout@v7
-2  docker/setup-qemu-action@v4          binfmt handlers for six foreign architectures
+2  docker/setup-qemu-action@v4          binfmt handlers for the foreign architecture
 3  docker/setup-buildx-action@v4
 4  docker/login-action@v4               Docker Hub
 5  compute tags                         latest, plus u<state_key> when called by the watcher
-6  docker/build-push-action@v7          7 platforms, push, upstream identities as build args
+6  docker/build-push-action@v7          2 platforms, push, upstream identities as build args
 ```
 
 ## Variables
@@ -37,17 +37,20 @@ only knows *how*.
 | `state_key` | workflow_call input | No | `''` | Becomes the immutable tag. Empty on a plain push, so only `latest` is published |
 | `DOCKER_USERNAME` / `DOCKER_PASSWORD` | secrets | Yes | none | Absent or wrong means step 4 fails and nothing is published |
 
-Target platforms, unchanged: `linux/386`, `linux/amd64`, `linux/arm64/v8`, `linux/arm/v6`,
-`linux/arm/v7`, `linux/ppc64le`, `linux/s390x`. `linux/mips64le` was added in commit a464077 and
-removed in 9a4a1cd, and remains out.
+Target platforms: `linux/amd64` and `linux/arm64` (`.github/workflows/docker.yml:88`). These are
+the only platforms `cgr.dev/chainguard/wolfi-base` is published for. Until the wolfi-base move the
+list was `linux/386`, `linux/amd64`, `linux/arm64/v8`, `linux/arm/v6`, `linux/arm/v7`,
+`linux/ppc64le`, `linux/s390x`; those five extra platforms were dropped because the base image
+cannot provide them. `linux/mips64le` was added in commit a464077 and removed in 9a4a1cd, before
+that. See [BL-CI-014](../../BUSINESS-LOGIC.md#bl-ci-014).
 
 ## Runs
 
 ### Called by the watcher
 
 - Trigger: `workflow_call` from `watch-upstream.yml` after it detects upstream movement.
-- Behavior: builds all seven platforms, stamping the three upstream identities into the image as
-  labels, and publishes `latest` plus `u<state_key>`.
+- Behavior: builds both platforms, stamping three upstream identities (dehydrated, hook, base
+  digest) into the image as labels, and publishes `latest` plus `u<state_key>`.
 - Success: the watcher then records the state. A failure leaves the state unrecorded, so the next
   watcher run retries rather than skipping.
 
@@ -62,16 +65,17 @@ removed in 9a4a1cd, and remains out.
 ### Tagging
 
 - `latest` always.
-- `u<state_key>` only when the watcher supplies one. The key is derived from **all three** upstream
+- `u<state_key>` only when the watcher supplies one. The key is derived from **all four** watched
   identities, not from dehydrated alone: a tag keyed on one input would be reused when only the
-  base image moved, silently overwriting a previous build and destroying its rollback value. See
+  base image or its packages moved, silently overwriting a previous build and destroying its rollback value. See
   [BL-CI-012](../../BUSINESS-LOGIC.md#bl-ci-012).
 
 ### Failure modes
 
 - Docker Hub authentication failure at step 4.
 - An upstream clone or PyPI failure inside the `Dockerfile`.
-- A QEMU emulation failure on one of the six foreign architectures.
+- A QEMU emulation failure on the foreign architecture.
+- A Wolfi package that is missing or broken on one architecture.
 
 A single `build-push-action` invocation produces the whole manifest, so a failure on any one
 platform means nothing is pushed at all.
@@ -86,7 +90,7 @@ platform means nothing is pushed at all.
 | `docker/login-action@v4` | GitHub Action | Registry authentication | Cannot push |
 | `docker/build-push-action@v7` | GitHub Action | Build and push the manifest | No publish |
 | Docker Hub | Registry | Distribution | Previous `latest` remains |
-| Everything the `Dockerfile` pulls | Network | Base image, both clones, PyPI | Build failure |
+| Everything the `Dockerfile` pulls | Network | Base image from `cgr.dev`, Wolfi packages, both clones, PyPI | Build failure |
 
 Actions are pinned to a major version and kept current by Dependabot.
 
@@ -101,12 +105,12 @@ Actions are pinned to a major version and kept current by Dependabot.
 
 ## Business Rules
 
-1. Every published build carries `latest` plus an immutable tag derived from all three upstream
+1. Every published build carries `latest` plus an immutable tag derived from all four watched
    identities. See [BL-CI-012](../../BUSINESS-LOGIC.md#bl-ci-012).
 2. Registry credentials come only from repository secrets. See
    [BL-CI-004](../../BUSINESS-LOGIC.md#bl-ci-004).
-3. The manifest covers exactly seven platforms. See
-   [BL-CI-003](../../BUSINESS-LOGIC.md#bl-ci-003).
+3. The manifest covers exactly two platforms, `linux/amd64` and `linux/arm64`. See
+   [BL-CI-014](../../BUSINESS-LOGIC.md#bl-ci-014).
 4. Given a push that touches only the state file or documentation, then no build runs.
    (`.github/workflows/docker.yml`, the `paths-ignore` list)
 5. Given a build failure on any single platform, then nothing is pushed at all.

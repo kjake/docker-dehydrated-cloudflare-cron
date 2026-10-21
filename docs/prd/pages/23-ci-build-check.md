@@ -27,11 +27,12 @@ since 2026-04; requiring it would block every merge for the wrong reason.
 3  docker/build-push-action@v7        push: false, load: true, single platform
 4  smoke test the image
 5  renewal script fails soft without credentials     regression test
-6  CF_HOST forms resolve correctly                   regression test
+6  domains-file mode builds an empty argument list   regression test
+7  CF_HOST forms resolve correctly                   regression test
 ```
 
-Single platform on purpose: this gates correctness, not portability, and emulating seven
-architectures would make every pull request slow.
+Single platform on purpose: this gates correctness, not portability, and emulating the second
+architecture (`arm64`) would make every pull request slow (`.github/workflows/build-check.yml:32-33`).
 
 ## Variables
 
@@ -45,14 +46,16 @@ architectures would make every pull request slow.
 
 ### Step 4, smoke test
 
-Asserts the image is structurally sound:
+Asserts the image is structurally sound (`.github/workflows/build-check.yml:41-62`):
 
 | Assertion | Why it matters |
 |---|---|
 | both scripts exist and are executable | a `chmod` regression would break the container silently |
 | `/dehydrated/domains.txt` exists and is empty | domains-file mode depends on it |
 | upstream client and hook are present | proves both clones succeeded |
-| `crond` and `bash` present | the container command needs both |
+| `supercronic -test /etc/crontabs/dehydrated` passes | proves the scheduler is installed and the crontab parses; the container command needs both |
+| `bash` present | the container command and the renewal script need it |
+| `pip3` **absent** | proves the build-time `py3-pip` was removed |
 | `git` **absent** | proves the build-time tool was removed |
 | `/etc/dehydrated-build-info` readable | proves provenance recording works |
 | health check exits non-zero with no status file | the initial state must be unhealthy, not healthy |
@@ -67,7 +70,17 @@ a trailing `find`, which combined with the old `&&` container command to kill th
 whenever `certs` did not exist. See [BL-RENEW-007](../../BUSINESS-LOGIC.md#bl-renew-007) and
 [BL-RENEW-008](../../BUSINESS-LOGIC.md#bl-renew-008).
 
-### Step 6, CF_HOST forms
+### Step 6, domains-file mode
+
+Runs the renewal script with a dummy `CF_API_TOKEN` and no `CF_HOST`
+(`.github/workflows/build-check.yml:80-87`), and asserts three things: no `unbound variable` error,
+the `reading domains from` message present, and exit status 0.
+
+This is the regression test for expanding an empty bash array under `set -u`. Getting that wrong
+aborts the script before it records a status, leaving the container permanently unhealthy while
+looking fine.
+
+### Step 7, CF_HOST forms
 
 Asserts all three forms produce the expected argument list:
 
@@ -115,5 +128,8 @@ the entire safety mechanism for automerge.
    [BL-RENEW-006](../../BUSINESS-LOGIC.md#bl-renew-006).
 4. Given `CF_HOST='*.example.com'` with matching files present, then the wildcard survives intact.
    See [BL-RENEW-010](../../BUSINESS-LOGIC.md#bl-renew-010).
-5. Given a built image, then `git` is absent from it. See
-   [BL-IMG-002](../../BUSINESS-LOGIC.md#bl-img-002).
+5. Given a built image, then `git` and `pip3` are absent from it, and `supercronic -test` accepts
+   `/etc/crontabs/dehydrated`. See [BL-IMG-017](../../BUSINESS-LOGIC.md#bl-img-017) and
+   [BL-IMG-018](../../BUSINESS-LOGIC.md#bl-img-018).
+6. Given `CF_API_TOKEN` set and `CF_HOST` unset, then the script selects domains-file mode, does
+   not fail on the empty argument list, and exits 0. (`.github/workflows/build-check.yml:80-87`)

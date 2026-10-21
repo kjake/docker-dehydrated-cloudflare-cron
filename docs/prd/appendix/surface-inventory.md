@@ -15,8 +15,8 @@ installed as an outbound client for the upstream ACME code. Affirmative finding,
 |---|---|---|---|---|---|
 | 1 | Container image | `kjake/dehydrated-cloudflare-cron:latest` | `docker.yml` | None to pull | Operators |
 | 2 | Container image | `kjake/dehydrated-cloudflare-cron:u<state_key>` | `docker.yml` | None to pull | Operators pinning or rolling back |
-| 3 | Container command | `/etc/periodic/daily/dehydrated; exec crond -f` | `Dockerfile` | Runs as root | Docker, at `docker start` |
-| 4 | Executable path | `/etc/periodic/daily/dehydrated` | `Dockerfile` | Runs as root | busybox `crond`, and the container command |
+| 3 | Container command | `/etc/periodic/daily/dehydrated; exec supercronic /etc/crontabs/dehydrated` | `Dockerfile:55` | Runs as root | Docker, at `docker start` |
+| 4 | Executable path | `/etc/periodic/daily/dehydrated` | `Dockerfile:21` | Runs as root | `supercronic`, through the `0 2 * * *` entry in `/etc/crontabs/dehydrated` (`Dockerfile:43`), and the container command |
 | 5 | Executable path | `/usr/local/bin/healthcheck` | `Dockerfile` | Runs as root | Docker's health check |
 | 6 | Env var | `CF_API_TOKEN` | read by the hook; presence checked by the renewal script | n/a | The hook |
 | 7 | Env var | `CF_EMAIL` | read by the hook; presence checked by the renewal script | n/a | The hook, legacy path only |
@@ -110,5 +110,5 @@ None. Every unit above has at least one identified consumer.
 |---|---|---|---|
 | `./dehydrated` | `dehydrated-io/dehydrated`, branch `master` | Cloned at build, invoked by the renewal script | Nothing material remains: renewal threshold, exit codes, file layout, and `domains.txt` grammar were all resolved from source |
 | `hooks/cloudflare/hook.py` | `SeattleDevs/letsencrypt-cloudflare-hook`, branch `main` | Cloned at build, invoked via `-k` | Its six environment variables are now documented. Internal retry and propagation behavior is not |
-| `crond`, `run-parts`, `/etc/crontabs/root` | busybox and `alpine-baselayout` | Started by the container command | Resolved: `/etc/periodic/daily` runs at 02:00 |
+| `supercronic` | Wolfi package `supercronic` | Started by the container command, reads `/etc/crontabs/dehydrated` | Nothing material: the schedule is in this repository, and the 02:00 UTC firing was observed with `supercronic -debug` |
 | GitHub Actions (7 actions) | Third parties | Referenced by the workflows | Their full input sets |

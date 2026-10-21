@@ -77,19 +77,21 @@ grants only the first row.
 
 ## 7. Published target platforms
 
-- Source: `.github/workflows/docker.yml`, the `platforms` input
+- Source: `.github/workflows/docker.yml:88`, the `platforms` input
 
-`linux/386`, `linux/amd64`, `linux/arm64/v8`, `linux/arm/v6`, `linux/arm/v7`, `linux/ppc64le`,
-`linux/s390x`.
+`linux/amd64`, `linux/arm64`. These are the only platforms `cgr.dev/chainguard/wolfi-base` is
+published for. See [BL-CI-014](../../BUSINESS-LOGIC.md#bl-ci-014).
 
-Retired value: `linux/mips64le`, present between commits a464077 and 9a4a1cd.
+Retired values: `linux/386`, `linux/arm/v6`, `linux/arm/v7`, `linux/ppc64le`, `linux/s390x`, dropped
+with the wolfi-base move on 2026-10-21 (`linux/arm64/v8` is now written `linux/arm64`, the same
+platform). `linux/mips64le`, present between commits a464077 and 9a4a1cd.
 
 ## 8. Published image tags
 
 | Value | When | Meaning |
 |---|---|---|
 | `latest` | every publish | Most recent build |
-| `u<state_key>` | only when the watcher supplies one | Immutable identity of the three upstreams. 12 hex characters |
+| `u<state_key>` | only when the watcher supplies one | Immutable identity of the four watched inputs (two commits, base digest, package set). 12 hex characters |
 
 ## 9. Local-only build tags
 
@@ -121,7 +123,7 @@ vulnerabilities.
 | `24 5 * * 4` | `anchore.yml` | Thursdays 05:24 UTC, vulnerability scan |
 | `weekly` | `dependabot.yml` | GitHub Actions update check |
 | `main` | all workflows | The only branch any workflow reacts to |
-| `0 2 * * *` (base image) | `alpine-baselayout` crontab | The in-container daily job, 02:00 local |
+| `0 2 * * *` | `/etc/crontabs/dehydrated`, written by `Dockerfile:43` | The in-container daily job, run by `supercronic` at 02:00 UTC. `TZ` has no effect |
 
 The former `0 6 * * 1` weekly rebuild was retired in favour of the watcher.
 
@@ -131,4 +133,4 @@ The former `0 6 * * 1` weekly rebuild was retired in favour of the watcher.
 |---|---|
 | `domains.txt` grammar values | Defined upstream. Documented in [data-dictionary.md](./data-dictionary.md) |
 | ACME client exit codes | Only 0 and 1 in practice, but `_openssl` can propagate others. Test non-zero |
-| Base image package versions | `python:alpine` floats by design |
+| Base image package versions | `wolfi-base` and its packages float by design. Fingerprinted, not enumerated, by `packages_digest` |
