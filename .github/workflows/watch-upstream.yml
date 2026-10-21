@@ -39,7 +39,7 @@ env:
   # Must match the unpinned apk add in the Dockerfile, minus git, which is
   # removed after the build. Wolfi ships CVE fixes as package updates that do
   # not move the base image digest, so the resolved package set is watched too.
-  RUNTIME_PACKAGES: curl openssl bash python-3 py3-pip supercronic
+  RUNTIME_PACKAGES: curl openssl bash python-3 py3-pip supercronic tzdata
 
 jobs:
   check:

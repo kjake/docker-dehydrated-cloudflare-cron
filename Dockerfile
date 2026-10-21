@@ -25,7 +25,8 @@ COPY healthcheck /usr/local/bin/healthcheck
 # patched versions. Keep this list in step with RUNTIME_PACKAGES in
 # .github/workflows/watch-upstream.yml, which fingerprints it to decide when to
 # rebuild. Wolfi's busybox has no crond, so supercronic runs the daily job.
-RUN apk add --no-cache curl openssl bash git python-3 py3-pip supercronic && \
+# wolfi-base ships no time zone data; tzdata lets TZ move the 02:00 run.
+RUN apk add --no-cache curl openssl bash git python-3 py3-pip supercronic tzdata && \
     cd / && \
     git clone https://github.com/dehydrated-io/dehydrated && \
     cd dehydrated && \
