@@ -2,9 +2,9 @@
 
 > Surface type: background job
 > Address: `/etc/periodic/daily/dehydrated` inside the container (repo file `dehydrated`)
-> Schedule: once synchronously at container start, then daily at **02:00 container-local time**
-> Source: `dehydrated`, placed by `Dockerfile`
-> Consumed by: busybox `crond` and the container command. No human invokes it by name.
+> Schedule: once synchronously at container start, then daily at **02:00 UTC** (`0 2 * * *` in `/etc/crontabs/dehydrated`; `TZ` has no effect)
+> Source: `dehydrated`, placed by `Dockerfile:21`, scheduled by `Dockerfile:42-43`
+> Consumed by: `supercronic` and the container command. No human invokes it by name.
 > Auth or permissions: runs as root (no `USER` directive), required for the `chown`. Authenticates to CloudFlare only indirectly, through the environment the hook inherits.
 
 ## Overview
@@ -64,16 +64,19 @@ There is no separate `--register` step. See
 ### Run at container start
 
 - Trigger: `docker start`, via the exec-form `CMD`.
-- Behavior: the full pipeline runs synchronously before `crond` starts.
+- Behavior: the full pipeline runs synchronously before `supercronic` starts.
 - Outputs: certificates under `/dehydrated/certs`, account key under `/dehydrated/accounts`, log
   output on stdout and stderr, and a status file.
-- Success: exit 0, after which `crond` starts as PID 1 and holds the container open.
+- Success: exit 0, after which `supercronic` starts as PID 1 and holds the container open.
 - Failure: the only non-zero exit is failure to enter `/dehydrated`, which indicates a broken
-  image. Every other failure still exits 0 and the container proceeds to scheduled operation.
+  image. Every other failure still exits 0. Either way the `;` in the container command starts
+  `supercronic`, so the container proceeds to scheduled operation.
 
 ### Daily scheduled run
 
-- Trigger: busybox cron executing `run-parts /etc/periodic/daily` at 02:00 container-local time.
+- Trigger: `supercronic` firing the single entry in `/etc/crontabs/dehydrated` at 02:00 UTC. The
+  image has no time zone data, so the time is UTC whatever `TZ` says. See
+  [BL-RENEW-011](../../BUSINESS-LOGIC.md#bl-renew-011).
 - Behavior: identical pipeline. The client renews a certificate once it is within
   **32 days** of expiry, and generates a **new private key** on each renewal by default.
 - Outputs: unchanged files when nothing is due. Ownership and modes are reapplied unconditionally
@@ -111,14 +114,15 @@ There is no separate `--register` step. See
 | `/dehydrated/dehydrated` | Upstream executable, cloned at build | ACME registration, issuance, renewal | Run records `FAIL`; container stays up |
 | `hooks/cloudflare/hook.py` | Upstream Python hook | DNS TXT record management for the challenge | Issuance fails; recorded as `FAIL` |
 | `bash` | Interpreter | The script requires bash specifically, not `sh` | Script cannot run |
+| `python3` | Interpreter | Runs the hook, from Wolfi's `python-3` package | Every challenge fails; recorded as `FAIL` |
 | CloudFlare API, ACME provider | Network services | Challenge and certificate issuance | Recorded as `FAIL` |
 | `/dehydrated/certs` | Filesystem path | Output | Absence is handled by the step 5 guard |
 | `/run` | Filesystem path | Status file location | A write failure warns but does not fail the run |
-| `chown`, `chmod`, `find`, `date` | busybox binaries | Permission normalization and timestamping | Warn individually; the run continues |
+| `chown`, `chmod`, `find`, `date` | busybox applets (wolfi-base) | Permission normalization and timestamping | Warn individually; the run continues |
 
 ## Relationships
 
-- Invoked by: the container command and busybox cron, both described in
+- Invoked by: the container command and `supercronic`, both described in
   [01-container-image.md](./01-container-image.md).
 - Invokes: the upstream ACME client, which invokes the CloudFlare hook.
 - Reads: configuration from [02-runtime-configuration.md](./02-runtime-configuration.md).
