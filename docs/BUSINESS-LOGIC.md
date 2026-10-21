@@ -40,7 +40,7 @@ These must hold at all times, independent of any single run.
    users and every directory under `certs` is traversable by all users.
    (`dehydrated`, `dehydrated`)
 6. The image contains no `git` and no `pip3` at runtime: both are installed for the build
-   and deleted in the same layer. (`Dockerfile:28`, `Dockerfile:39`)
+   and deleted in the same layer. (`Dockerfile:29`, `Dockerfile:40`)
 
 ## Rules by area
 
@@ -102,7 +102,7 @@ with no pin.
 **Rule:** The hook's Python dependencies are installed into the image's global site-packages
 from the hook's own `requirements.txt`. No virtualenv is used and no dependency is pinned
 by this repository.
-**Enforced:** `Dockerfile:34`.
+**Enforced:** `Dockerfile:35`.
 **Note:** `pip3` is removed after this step ([BL-IMG-017](#bl-img-017)), so the installed packages
 cannot be listed with pip in the final image. They remain importable from the system site-packages.
 **Test:** the dependency set is defined externally; assert only that
@@ -211,7 +211,7 @@ next watcher run reconciles that.
 
 **Rule:** The base image is `cgr.dev/chainguard/wolfi-base`, referenced by bare name with no tag or
 digest, and every package is installed unpinned.
-**Enforced:** `Dockerfile:1` (`FROM`), `Dockerfile:28` (`apk add` with no version constraints).
+**Enforced:** `Dockerfile:1` (`FROM`), `Dockerfile:29` (`apk add` with no version constraints).
 **Supersedes:** [BL-IMG-001](#bl-img-001).
 **Why unpinned:** Wolfi ships CVE fixes as package updates, often without moving the base image
 digest. Leaving packages unpinned means each rebuild picks up the latest patched versions; the
@@ -225,13 +225,15 @@ supercronic 0.2.51.
 
 ### BL-IMG-017
 
-**Rule:** The build installs `curl openssl bash git python-3 py3-pip supercronic`, then removes
-`git` and `py3-pip` in the same layer. The runtime set is `curl`, `openssl`, `bash`, `python-3`,
-and `supercronic`, plus whatever the base image provides.
-**Enforced:** `Dockerfile:28` installs, `Dockerfile:39` runs `apk del git py3-pip`.
+**Rule:** The build installs `curl openssl bash git python-3 py3-pip supercronic tzdata`, then
+removes `git` and `py3-pip` in the same layer. The runtime set is `curl`, `openssl`, `bash`,
+`python-3`, `supercronic`, and `tzdata`, plus whatever the base image provides.
+**Enforced:** `Dockerfile:29` installs, `Dockerfile:40` runs `apk del git py3-pip`.
 **Supersedes:** [BL-IMG-002](#bl-img-002).
 **Why `python-3` is listed:** wolfi-base, unlike `python:alpine`, ships no Python, and the hook is
 a Python program.
+**Why `tzdata` is listed:** wolfi-base ships no time zone data, so without it `TZ` is ignored. See
+[BL-RENEW-011](#bl-renew-011).
 **Test:** `supercronic -test /etc/crontabs/dehydrated` succeeds, `command -v bash` succeeds, and
 both `command -v pip3` and `command -v git` fail. These are asserted by the smoke test in
 `.github/workflows/build-check.yml:51-54`.
@@ -242,8 +244,8 @@ both `command -v pip3` and `command -v git` fail. These are asserted by the smok
 The path is a historical location only: nothing in the image runs `/etc/periodic/daily`. The daily
 run comes from the crontab `/etc/crontabs/dehydrated`, which this repository writes during the
 build with the single entry `0 2 * * * /etc/periodic/daily/dehydrated`.
-**Enforced:** `Dockerfile:21` copies the script, `Dockerfile:41` runs `chmod +x`,
-`Dockerfile:42-43` writes the crontab.
+**Enforced:** `Dockerfile:21` copies the script, `Dockerfile:42` runs `chmod +x`,
+`Dockerfile:43-44` writes the crontab.
 **Supersedes:** [BL-IMG-008](#bl-img-008).
 **Why the path was kept:** the container command, the build check, and operator habits all name
 it. Moving it would change those for no gain.
@@ -257,7 +259,7 @@ another file into `/etc/periodic/daily` does not schedule it.
 **Rule:** The container command is
 `/etc/periodic/daily/dehydrated; exec supercronic /etc/crontabs/dehydrated` in exec form.
 `supercronic` starts regardless of the first run's outcome, and becomes PID 1.
-**Enforced:** `Dockerfile:55`, the `CMD` line.
+**Enforced:** `Dockerfile:56`, the `CMD` line.
 **Supersedes:** [BL-IMG-012](#bl-img-012). The `;` and `exec` semantics are unchanged; only the
 scheduler is different, because Wolfi's busybox has no `crond`.
 **Second effect:** as PID 1, `supercronic` reaps child processes and receives SIGTERM from
@@ -482,17 +484,20 @@ guards its own `domains.txt` parser the same way.
 
 ### BL-RENEW-011
 
-**Rule:** The renewal script runs once synchronously at container start, then daily at 02:00 UTC.
-**Enforced:** `Dockerfile:55` for the start-up run; `Dockerfile:43` writes the schedule
+**Rule:** The renewal script runs once synchronously at container start, then daily at 02:00 in
+the container's time zone: UTC by default, or the zone named by `TZ`.
+**Enforced:** `Dockerfile:56` for the start-up run; `Dockerfile:44` writes the schedule
 `0 2 * * *` to `/etc/crontabs/dehydrated`, which `supercronic` runs.
 **Supersedes:** [BL-RENEW-005](#bl-renew-005). The schedule is now owned by this repository, so
 it no longer depends on the base image's crontab.
-**Why UTC and not container-local:** `supercronic` reads the container's time zone, and the image
-ships no time zone data (`/usr/share/zoneinfo` is absent). Setting `TZ` therefore has no effect.
-Verified 2026-10-21: with `-e TZ=America/New_York`, `supercronic -debug` still reports the next run
-as `02:00:00 +0000 UTC`. The previous `python:alpine` base did ship `/usr/share/zoneinfo`.
-**Test:** assert `/etc/crontabs/dehydrated` contains `0 2 * * *`, and that `supercronic -debug`
-reports the next run at 02:00 UTC with and without `TZ` set.
+**Why `TZ` works:** `supercronic` resolves the container's time zone from `/usr/share/zoneinfo`,
+which the `tzdata` package provides (`Dockerfile:29`). wolfi-base ships no time zone data of its
+own; before `tzdata` was added, `TZ` was silently ignored and every run was at 02:00 UTC. The
+previous `python:alpine` base shipped `tzdata`, so adding it preserves the old behaviour.
+**Verified 2026-10-21:** with no `TZ`, `supercronic -debug` reports the next run as
+`02:00:00 +0000 UTC`; with `-e TZ=America/New_York` it reports `02:00:00 -0400 EDT`.
+**Test:** assert `/etc/crontabs/dehydrated` contains `0 2 * * *`, that `supercronic -debug`
+reports 02:00 UTC with no `TZ`, and 02:00 local time with `TZ=America/New_York`.
 
 ## Certificate store permissions
 
@@ -728,7 +733,7 @@ lost support with the base image change; earlier published tags still carry thos
 **Supersedes:** [BL-CI-009](#bl-ci-009).
 **`packages_digest`:** the watcher starts the base image at the digest it just resolved, runs
 `apk add --no-cache` for `RUNTIME_PACKAGES` (`.github/workflows/watch-upstream.yml:42`, currently
-`curl openssl bash python-3 py3-pip supercronic`), sorts the `apk info -v` name-version list, and
+`curl openssl bash python-3 py3-pip supercronic tzdata`), sorts the `apk info -v` name-version list, and
 keeps the first 12 hex characters of its SHA-256.
 **Why the package set is watched:** Wolfi ships CVE fixes as package updates that need not move
 the base image digest. Watching the digest alone would miss them.
@@ -737,7 +742,7 @@ the base image digest. Watching the digest alone would miss them.
 (`.github/workflows/watch-upstream.yml:79-82`). The version feeds only the change notice, not the
 state key.
 **Keep in step:** `RUNTIME_PACKAGES` must list the Dockerfile's `apk add` set minus `git`
-(`Dockerfile:24-28`). Nothing enforces this; a package added to only one side is installed but
+(`Dockerfile:24-29`). Nothing enforces this; a package added to only one side is installed but
 not watched.
 **Note:** the two upstreams use different default branch names. Do not assume one for the other.
 **Test:** run the workflow twice with no upstream movement; the second run must report
@@ -774,7 +779,7 @@ Source: `Dockerfile` (`CMD`), `dehydrated`.
 | created | first-run | `docker start` | none | renewal script runs synchronously |
 | first-run | scheduled | script finishes | always, because the command uses `;` not `&&` | `supercronic` starts as PID 1 and holds the container open |
 | first-run | scheduled | script exits non-zero | only when `/dehydrated` cannot be entered (`dehydrated:37-40`) | a broken image, not a runtime failure. The `;` still starts `supercronic`, so the container stays up and each daily run fails the same way |
-| scheduled | scheduled | `supercronic` fires `0 2 * * *`, 02:00 UTC | none | script runs again, permissions reapplied, status file rewritten |
+| scheduled | scheduled | `supercronic` fires `0 2 * * *`, 02:00 container time (UTC unless `TZ` is set) | none | script runs again, permissions reapplied, status file rewritten |
 
 The previous version had a fourth transition, `first-run -> exited` on any non-zero exit, which
 fired when `certs` did not exist. Both causes are now removed: see
@@ -815,7 +820,7 @@ than deleted, so the history stays legible.
 | 5 | ACME account re-registered on every run | **Fixed.** See [BL-RENEW-009](#bl-renew-009) |
 | 6 | The repo script and the upstream executable share the name `dehydrated` | **Open.** Harmless: different paths, and the script invokes `./dehydrated` after `cd`. Still makes `ps` output ambiguous |
 | 7 | `README.md` described daily renewal unconditionally, but it was gated on the first run succeeding | **Fixed.** The gate is gone ([BL-IMG-019](#bl-img-019)) and the README now states the 02:00 schedule |
-| 8 | `README.md:59` says the daily run is at "02:00 container-local time", which reads as if `TZ` moves it. The image has no time zone data, so it is always 02:00 UTC | **Open.** See [BL-RENEW-011](#bl-renew-011). Fix by installing `tzdata` or by rewording the README |
+| 8 | wolfi-base ships no time zone data, so `TZ` was ignored and the daily run was always 02:00 UTC, while `README.md` said "container-local" | **Fixed.** `tzdata` is installed, and `README.md:59-60` now says the run is UTC unless `TZ` is set. See [BL-RENEW-011](#bl-renew-011) |
 | 9 | The comments at `.github/workflows/docker.yml:26` and `:68` say the immutable tag derives from "three" upstream identities; since the wolfi-base move it is four | **Open.** Comment only, behaviour is correct. See [BL-CI-016](#bl-ci-016) |
 
 ### Remaining, accepted

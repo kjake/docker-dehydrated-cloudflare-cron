@@ -4,7 +4,7 @@ Everything that could not be determined from this checkout. Each entry states wh
 and how to resolve it. Resolved entries are kept with their answers rather than deleted, so the
 reasoning survives.
 
-**Open items: 2. Resolved on 2026-09-16: 12. Resolved on 2026-10-21: 1.**
+**Open items: 1. Resolved on 2026-09-16: 12. Resolved on 2026-10-21: 2.**
 
 ## Still open
 
@@ -22,19 +22,6 @@ current v4, and `anchore/scan-action` at v3 against v7. Both have been bumped.
 
 **How to resolve:** re-enable the workflows, let one run, and read the fresh log. If it succeeds,
 the rot explanation holds. If it fails, the log will finally say why.
-
-### 2. Should the daily run follow `TZ`
-
-Since the move to `wolfi-base` the daily run is always at 02:00 UTC. `supercronic` reads the
-container's time zone, but the image ships no time zone data (`/usr/share/zoneinfo` is absent), so
-`TZ` is ignored. Observed 2026-10-21: with `-e TZ=America/New_York`, `supercronic -debug` still
-reports the next run as `02:00:00 +0000 UTC`. The old `python:alpine` base shipped
-`/usr/share/zoneinfo`, so an operator who set `TZ` there may see the run move. `README.md:59` says
-"02:00 container-local time", which is literally true but reads as if `TZ` applies.
-
-**How to resolve:** decide whether `TZ` should work. If yes, add `tzdata` to the `apk add` in the
-`Dockerfile` and to `RUNTIME_PACKAGES` in `watch-upstream.yml`. If no, reword the README to say
-02:00 UTC. See [BL-RENEW-011](../../BUSINESS-LOGIC.md#bl-renew-011).
 
 ## Resolved on 2026-09-16
 
@@ -74,6 +61,7 @@ Additional facts established while resolving the above:
 | # | Question | Answer | Source |
 |---|---|---|---|
 | 1 | Why `linux/mips64le` was removed, and whether to restore it | Why it was removed in 9a4a1cd ("Tweak buildx") is still not recorded, but the question is now moot: `cgr.dev/chainguard/wolfi-base` is published only for `linux/amd64` and `linux/arm64`, so neither `mips64le` nor the five other dropped platforms can be built without changing the base image | `docker buildx imagetools inspect cgr.dev/chainguard/wolfi-base`; [BL-CI-014](../../BUSINESS-LOGIC.md#bl-ci-014) |
+| 2 | Should the daily run follow `TZ` | Yes. wolfi-base ships no time zone data, so after the move off `python:alpine` (which shipped `tzdata`) `TZ` was silently ignored and every run was at 02:00 UTC. `tzdata` is now installed and in `RUNTIME_PACKAGES`, restoring the old behaviour. Observed: no `TZ` gives `02:00:00 +0000 UTC`, `TZ=America/New_York` gives `02:00:00 -0400 EDT` | `supercronic -debug` in a built image; [BL-RENEW-011](../../BUSINESS-LOGIC.md#bl-renew-011) |
 
 ## Verification caveats
 
@@ -83,7 +71,7 @@ The build check exercises most of them in CI.
 
 | Claim | Basis | How to confirm |
 |---|---|---|
-| Daily run fires at 02:00 UTC | **Observed 2026-10-21.** `supercronic -debug` reports `02:00:00 +0000 UTC`, with or without `TZ` | `docker run --rm IMAGE timeout 3 supercronic -debug /etc/crontabs/dehydrated` |
+| Daily run fires at 02:00 container time | **Observed 2026-10-21.** `supercronic -debug` reports `02:00:00 +0000 UTC` with no `TZ` and `02:00:00 -0400 EDT` with `TZ=America/New_York` | `docker run --rm IMAGE timeout 3 supercronic -debug /etc/crontabs/dehydrated` |
 | `nogroup` is GID 65533 | **Observed 2026-10-21** in `/etc/group` of a built image. The image has no `getent` | `docker run --rm IMAGE grep -E '^(nogroup\|nobody):' /etc/group` |
 | Branch behavior under the container's bash | Reproduced on host bash 3.2; the container runs GNU bash 5.3.0 (observed 2026-10-21) | Covered by the `CF_HOST forms` step in `build-check.yml` |
 | `privkey*` covers every private key | Regex-derived from dehydrated's 2492 lines; a filename built purely from variables would have been missed | Inspect a real `certs/<domain>` after issuance |

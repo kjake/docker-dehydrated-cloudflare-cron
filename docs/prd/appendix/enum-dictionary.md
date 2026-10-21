@@ -123,7 +123,7 @@ vulnerabilities.
 | `24 5 * * 4` | `anchore.yml` | Thursdays 05:24 UTC, vulnerability scan |
 | `weekly` | `dependabot.yml` | GitHub Actions update check |
 | `main` | all workflows | The only branch any workflow reacts to |
-| `0 2 * * *` | `/etc/crontabs/dehydrated`, written by `Dockerfile:43` | The in-container daily job, run by `supercronic` at 02:00 UTC. `TZ` has no effect |
+| `0 2 * * *` | `/etc/crontabs/dehydrated`, written by `Dockerfile:44` | The in-container daily job, run by `supercronic` at 02:00 container time (UTC unless `TZ` is set) |
 
 The former `0 6 * * 1` weekly rebuild was retired in favour of the watcher.
 
