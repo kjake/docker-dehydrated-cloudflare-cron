@@ -31,4 +31,6 @@ Then start container, which will run update script once at start and once daily 
 docker start dehydrated
 ```
 
+The image is built on [Chainguard's wolfi-base](https://images.chainguard.dev/directory/image/wolfi-base/overview) with unpinned packages, so each weekly rebuild picks up the latest patched versions. [supercronic](https://github.com/aptible/supercronic) runs the daily job. Images are published for `linux/amd64` and `linux/arm64` only, the platforms Wolfi supports.
+
 Based on [kmlucy/docker-dehydrated](https://github.com/kmlucy/docker-dehydrated)
