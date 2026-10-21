@@ -1,0 +1,29 @@
+#!/bin/bash
+#
+# Report the outcome of the most recent renewal run to Docker.
+#
+# The renewal script always exits 0 so that a failed issuance does not tear the
+# container down (cron retries daily). That means the container's exit status
+# cannot signal trouble, so the status file is the signal instead and this is
+# what surfaces it in "docker ps" and "docker inspect".
+#
+# Exit 0 = healthy, non-zero = unhealthy.
+
+set -uo pipefail
+
+STATUS_FILE=/run/dehydrated.status
+
+# Absent until the first run completes. The Dockerfile's --start-period covers
+# the window where this is expected.
+if [ ! -r "${STATUS_FILE}" ]; then
+  echo "no renewal has completed yet"
+  exit 1
+fi
+
+if ! read -r status timestamp <"${STATUS_FILE}"; then
+  echo "status file is unreadable"
+  exit 1
+fi
+
+echo "last run: ${status} at ${timestamp:-unknown}"
+[ "${status}" = "OK" ]

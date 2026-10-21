@@ -1,0 +1,28 @@
+version: 2
+
+# Scoped to GitHub Actions only, deliberately.
+#
+# Dependabot has no ecosystem that can watch a "git clone" inside a Dockerfile
+# RUN line, so it cannot see dehydrated or the CloudFlare hook. Those are handled
+# by .github/workflows/watch-upstream.yml instead. FROM is not tracked either:
+# the base image tag carries no version to bump, and the watcher follows its
+# digest.
+#
+# Actions are different: they are referenced by version by definition, and this
+# repository let them rot up to four major versions behind, which is the likely
+# cause of the SARIF upload failing from 2026-04 onward.
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # One pull request for all action bumps rather than one each.
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: chore
+    labels:
+      - dependencies
