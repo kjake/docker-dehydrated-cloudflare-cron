@@ -60,8 +60,9 @@ alone fails at the initial zone lookup.
 | `PUID` | string or numeric UID | No | `nobody` | Any user name or numeric UID | Owner applied to `certs`. Numeric values pass straight through |
 | `PGID` | string or numeric GID | No | `nogroup` | Any group name or numeric GID | Group applied to `certs`. Decides who can read private keys. `nogroup` is GID 65533 on wolfi-base, as it was on Alpine |
 
-`TZ` is not in this table on purpose: the image has no time zone data, so setting it does not move
-the 02:00 UTC daily run. See [BL-RENEW-011](../../BUSINESS-LOGIC.md#bl-renew-011).
+`TZ` is not read by anything in this repository, so it is not in the table, but it does move the
+daily run: `supercronic` fires at 02:00 in the zone it names, using the `tzdata` the image installs.
+Unset, the run is at 02:00 UTC. See [BL-RENEW-011](../../BUSINESS-LOGIC.md#bl-renew-011).
 
 ### Mount points
 

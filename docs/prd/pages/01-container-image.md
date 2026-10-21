@@ -28,20 +28,20 @@ What the build creates, in the order the `Dockerfile` creates it.
 | Label | `Dockerfile` | `maintainer=kjake` |
 | Labels | `Dockerfile:10-19` `ARG`/`LABEL` | OCI metadata plus the three upstream identities the watcher observed. See [BL-IMG-015](../../BUSINESS-LOGIC.md#bl-img-015) |
 | Script install | `Dockerfile:21-22` `COPY` | Repo files `dehydrated` and `healthcheck` copied in. `COPY`, not `ADD` |
-| Packages | `Dockerfile:28` `RUN` | `curl`, `openssl`, `bash`, `git`, `python-3`, `py3-pip`, `supercronic` installed, all unpinned so each rebuild gets Wolfi's latest fixes |
-| ACME client | `Dockerfile:30` | `git clone` of `dehydrated-io/dehydrated` into `/dehydrated`, default branch, unpinned |
-| Hook directory | `Dockerfile:32` | `/dehydrated/hooks` created |
-| Hook | `Dockerfile:33` | `git clone` of `SeattleDevs/letsencrypt-cloudflare-hook` into `/dehydrated/hooks/cloudflare`, default branch, unpinned |
-| Python deps | `Dockerfile:34` | `pip3 install -r hooks/cloudflare/requirements.txt` into the system site-packages (`/usr/lib/python3.<minor>/site-packages`) |
-| Build tool removal | `Dockerfile:39` | `apk del git py3-pip`. No `git` and no `pip3` at runtime. See [BL-IMG-017](../../BUSINESS-LOGIC.md#bl-img-017) |
-| Cleanup | `Dockerfile:40` | `/var/cache/apk/*`, `/tmp/*`, `/var/tmp/`, `~/.cache/pip` removed |
-| Script mode | `Dockerfile:41` | `/etc/periodic/daily/dehydrated` and `/usr/local/bin/healthcheck` made executable |
-| Schedule | `Dockerfile:42-43` | `/etc/crontabs/dehydrated` written with `0 2 * * * /etc/periodic/daily/dehydrated`. See [BL-IMG-018](../../BUSINESS-LOGIC.md#bl-img-018) |
-| Domains file | `Dockerfile:44` | `/dehydrated/domains.txt` created empty |
-| Build info | `Dockerfile:35-38` `RUN` | `/etc/dehydrated-build-info` records the commits actually cloned |
-| Health | `Dockerfile:49-50` `HEALTHCHECK` | Runs `/usr/local/bin/healthcheck` every 6h after a 5m start period |
-| Command | `Dockerfile:55` `CMD` | `["/bin/bash","-c","/etc/periodic/daily/dehydrated; exec supercronic /etc/crontabs/dehydrated"]` (exec form) |
-| Volumes | `Dockerfile:57`, `Dockerfile:62` `VOLUME` | `/dehydrated/certs` **and** `/dehydrated/accounts` |
+| Packages | `Dockerfile:29` `RUN` | `curl`, `openssl`, `bash`, `git`, `python-3`, `py3-pip`, `supercronic`, `tzdata` installed, all unpinned so each rebuild gets Wolfi's latest fixes |
+| ACME client | `Dockerfile:31` | `git clone` of `dehydrated-io/dehydrated` into `/dehydrated`, default branch, unpinned |
+| Hook directory | `Dockerfile:33` | `/dehydrated/hooks` created |
+| Hook | `Dockerfile:34` | `git clone` of `SeattleDevs/letsencrypt-cloudflare-hook` into `/dehydrated/hooks/cloudflare`, default branch, unpinned |
+| Python deps | `Dockerfile:35` | `pip3 install -r hooks/cloudflare/requirements.txt` into the system site-packages (`/usr/lib/python3.<minor>/site-packages`) |
+| Build tool removal | `Dockerfile:40` | `apk del git py3-pip`. No `git` and no `pip3` at runtime. See [BL-IMG-017](../../BUSINESS-LOGIC.md#bl-img-017) |
+| Cleanup | `Dockerfile:41` | `/var/cache/apk/*`, `/tmp/*`, `/var/tmp/`, `~/.cache/pip` removed |
+| Script mode | `Dockerfile:42` | `/etc/periodic/daily/dehydrated` and `/usr/local/bin/healthcheck` made executable |
+| Schedule | `Dockerfile:43-44` | `/etc/crontabs/dehydrated` written with `0 2 * * * /etc/periodic/daily/dehydrated`. See [BL-IMG-018](../../BUSINESS-LOGIC.md#bl-img-018) |
+| Domains file | `Dockerfile:45` | `/dehydrated/domains.txt` created empty |
+| Build info | `Dockerfile:36-39` `RUN` | `/etc/dehydrated-build-info` records the commits actually cloned |
+| Health | `Dockerfile:50-51` `HEALTHCHECK` | Runs `/usr/local/bin/healthcheck` every 6h after a 5m start period |
+| Command | `Dockerfile:56` `CMD` | `["/bin/bash","-c","/etc/periodic/daily/dehydrated; exec supercronic /etc/crontabs/dehydrated"]` (exec form) |
+| Volumes | `Dockerfile:58`, `Dockerfile:63` `VOLUME` | `/dehydrated/certs` **and** `/dehydrated/accounts` |
 
 Resulting filesystem layout that matters at runtime:
 
@@ -87,10 +87,10 @@ label the image; none of the upstream sources is parameterized.
   base image, its packages, and both clones. See [BL-IMG-016](../../BUSINESS-LOGIC.md#bl-img-016),
   [BL-IMG-004](../../BUSINESS-LOGIC.md#bl-img-004),
   [BL-IMG-005](../../BUSINESS-LOGIC.md#bl-img-005).
-- Failure modes: an upstream repository rename or deletion breaks `Dockerfile:30` or
-  `Dockerfile:33`; a PyPI resolution failure breaks `Dockerfile:34`; a Wolfi package
-  rename (for example `python-3` or `supercronic`) breaks `Dockerfile:28`; a Wolfi Python build
-  that adopts PEP 668 marking would break `Dockerfile:34` with
+- Failure modes: an upstream repository rename or deletion breaks `Dockerfile:31` or
+  `Dockerfile:34`; a PyPI resolution failure breaks `Dockerfile:35`; a Wolfi package
+  rename (for example `python-3` or `supercronic`) breaks `Dockerfile:29`; a Wolfi Python build
+  that adopts PEP 668 marking would break `Dockerfile:35` with
   `externally-managed-environment` (the 2026-10-21 build with Python 3.13 did not hit this).
   All surface as a non-zero `docker build`.
 - Multi-platform: the published build covers `linux/amd64` and `linux/arm64`, the only
@@ -99,7 +99,7 @@ label the image; none of the upstream sources is parameterized.
 
 ### Starting a container
 
-- Trigger: `docker start`, `README.md:61`.
+- Trigger: `docker start`, `README.md:62`.
 - What happens: the renewal script runs synchronously to completion, then
   `exec supercronic /etc/crontabs/dehydrated` replaces the shell so `supercronic` becomes PID 1. The separator is `;`, not `&&`, so the
   scheduler starts regardless of how the first run went.
@@ -118,7 +118,7 @@ label the image; none of the upstream sources is parameterized.
   now survives too, because `/dehydrated/accounts` is a declared volume, so a recreate no
   longer spends a new-account registration. Bind it explicitly to survive `docker rm -v`.
   See [BL-IMG-013](../../BUSINESS-LOGIC.md#bl-img-013).
-- Edge case: with no `-v` for certs, `Dockerfile:57` gives an anonymous volume. It survives
+- Edge case: with no `-v` for certs, `Dockerfile:58` gives an anonymous volume. It survives
   restart, survives `docker rm`, and is destroyed by `docker rm -v`.
 
 ## Dependencies
@@ -130,19 +130,19 @@ label the image; none of the upstream sources is parameterized.
 | `dehydrated-io/dehydrated` | Build-time git clone | The ACME client itself | Build fails if the repo or default branch is unavailable |
 | `SeattleDevs/letsencrypt-cloudflare-hook` | Build-time git clone | DNS-01 challenge solving against CloudFlare | Build fails if unavailable |
 | PyPI (via hook `requirements.txt`) | Build-time packages | Hook runtime dependencies | Build fails on resolution error |
-| `bash` | Runtime binary | The renewal script's interpreter (`dehydrated`) | Without it the script cannot execute. Installed at `Dockerfile:28` |
-| `python-3` | Runtime | Interpreter for the hook | Without it every DNS-01 challenge fails. Installed at `Dockerfile:28` |
-| `curl`, `openssl` | Runtime binaries | Used by the upstream ACME client | Installed at `Dockerfile:28`. Their exact use is UNKNOWN-external |
-| `supercronic` | Runtime daemon | Runs `/etc/crontabs/dehydrated` as PID 1 | If absent, `exec supercronic` at `Dockerfile:55` fails and the container exits after the first run. The build check runs `supercronic -test` to catch this |
+| `bash` | Runtime binary | The renewal script's interpreter (`dehydrated`) | Without it the script cannot execute. Installed at `Dockerfile:29` |
+| `python-3` | Runtime | Interpreter for the hook | Without it every DNS-01 challenge fails. Installed at `Dockerfile:29` |
+| `curl`, `openssl` | Runtime binaries | Used by the upstream ACME client | Installed at `Dockerfile:29`. Their exact use is UNKNOWN-external |
+| `supercronic` | Runtime daemon | Runs `/etc/crontabs/dehydrated` as PID 1 | If absent, `exec supercronic` at `Dockerfile:56` fails and the container exits after the first run. The build check runs `supercronic -test` to catch this |
 | CloudFlare DNS API, ACME provider | Network services | Contacted by the hook and the client, never by this repo's code | Renewal fails; the script still exits 0, see [BL-RENEW-007](../../BUSINESS-LOGIC.md#bl-renew-007) |
 
 ## Relationships
 
 - Invoked by: an operator via `docker create` / `docker start` (`README.md:34-40`,
-  `README.md:50-56`, `README.md:61`); by the CI publish job which builds and pushes it
+  `README.md:50-56`, `README.md:62`); by the CI publish job which builds and pushes it
   (`.github/workflows/docker.yml:84-94`); by the CI scan job which builds it locally
   (`.github/workflows/anchore.yml:32-37`).
-- Invokes: the renewal job at `Dockerfile:55` and, daily, through `/etc/crontabs/dehydrated`. See
+- Invokes: the renewal job at `Dockerfile:56` and, daily, through `/etc/crontabs/dehydrated`. See
   [03-certificate-renewal-job.md](./03-certificate-renewal-job.md).
 - Shares state or data with: any other container mounting the same certs volume. That
   sharing is the reason for the permission rules in
@@ -179,6 +179,7 @@ Full rule text and citations live in
 5. Given a built image, when `command -v git` or `command -v pip3` is run inside it, then it
    fails, because both are installed and removed within one layer. See
    [BL-IMG-017](../../BUSINESS-LOGIC.md#bl-img-017).
-7. Given a built image, when the container starts, then the daily run is scheduled for 02:00 UTC
-   whatever `TZ` is set to, because the image has no time zone data. See
+7. Given a built image, when the container starts with no `TZ`, then the daily run is scheduled for
+   02:00 UTC; with `TZ=America/New_York`, for 02:00 New York time. `tzdata` makes the zone
+   available. See
    [BL-RENEW-011](../../BUSINESS-LOGIC.md#bl-renew-011).

@@ -2,8 +2,8 @@
 
 > Surface type: background job
 > Address: `/etc/periodic/daily/dehydrated` inside the container (repo file `dehydrated`)
-> Schedule: once synchronously at container start, then daily at **02:00 UTC** (`0 2 * * *` in `/etc/crontabs/dehydrated`; `TZ` has no effect)
-> Source: `dehydrated`, placed by `Dockerfile:21`, scheduled by `Dockerfile:42-43`
+> Schedule: once synchronously at container start, then daily at **02:00 container time** (`0 2 * * *` in `/etc/crontabs/dehydrated`; UTC unless `TZ` is set)
+> Source: `dehydrated`, placed by `Dockerfile:21`, scheduled by `Dockerfile:43-44`
 > Consumed by: `supercronic` and the container command. No human invokes it by name.
 > Auth or permissions: runs as root (no `USER` directive), required for the `chown`. Authenticates to CloudFlare only indirectly, through the environment the hook inherits.
 
@@ -74,8 +74,8 @@ There is no separate `--register` step. See
 
 ### Daily scheduled run
 
-- Trigger: `supercronic` firing the single entry in `/etc/crontabs/dehydrated` at 02:00 UTC. The
-  image has no time zone data, so the time is UTC whatever `TZ` says. See
+- Trigger: `supercronic` firing the single entry in `/etc/crontabs/dehydrated` at 02:00 container
+  time: UTC by default, or the zone named by `TZ`, which `tzdata` makes available. See
   [BL-RENEW-011](../../BUSINESS-LOGIC.md#bl-renew-011).
 - Behavior: identical pipeline. The client renews a certificate once it is within
   **32 days** of expiry, and generates a **new private key** on each renewal by default.

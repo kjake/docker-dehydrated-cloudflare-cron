@@ -46,7 +46,7 @@ The two upstreams use different default branch names. Neither is assumed.
 | `STATE_FILE` | workflow env | Yes | `.upstream-state.json` | Recorded state |
 | `STATE_BRANCH` | workflow env | Yes | `upstream-state` | Branch the state file lives on, kept off the protected default branch |
 | `BASE_IMAGE` | workflow env | Yes | `cgr.dev/chainguard/wolfi-base` | `.github/workflows/watch-upstream.yml:38`. Must match the `Dockerfile` `FROM` |
-| `RUNTIME_PACKAGES` | workflow env | Yes | `curl openssl bash python-3 py3-pip supercronic` | `.github/workflows/watch-upstream.yml:42`. Must match the `Dockerfile` `apk add` minus `git`. Nothing enforces this |
+| `RUNTIME_PACKAGES` | workflow env | Yes | `curl openssl bash python-3 py3-pip supercronic tzdata` | `.github/workflows/watch-upstream.yml:42`. Must match the `Dockerfile` `apk add` minus `git`. Nothing enforces this |
 | `GITHUB_TOKEN` | secret | Yes | provided | Used by `gh api` for the two commit lookups and for pushing |
 | `DOCKER_USERNAME`, `DOCKER_PASSWORD` | secrets | Yes, for publishing | none | Not read here; inherited by the publish job |
 

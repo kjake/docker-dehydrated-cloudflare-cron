@@ -10,7 +10,8 @@ Dockerfile
 ├── cgr.dev/chainguard/wolfi-base                  external, bare name, no tag or digest
 ├── dehydrated              (this repo)            -> /etc/periodic/daily/dehydrated
 ├── healthcheck             (this repo)            -> /usr/local/bin/healthcheck
-├── apk: curl openssl bash python-3 supercronic     runtime packages, unpinned
+├── apk: curl openssl bash python-3 supercronic tzdata
+│                                                  runtime packages, unpinned
 ├── apk: git py3-pip                               build only, removed in the same layer
 ├── dehydrated-io/dehydrated        branch master  external, unpinned -> /dehydrated
 ├── SeattleDevs/letsencrypt-cloudflare-hook
@@ -37,7 +38,7 @@ docker start
     │   ├── chown / chmod on certs                 guarded on certs existing
     │   └── write /run/dehydrated.status
     └── exec supercronic /etc/crontabs/dehydrated  becomes PID 1, always reached
-        └── 0 2 * * *                              02:00 UTC; TZ has no effect
+        └── 0 2 * * *                              02:00 container time, UTC unless TZ set
             └── /etc/periodic/daily/dehydrated     same pipeline
 
 docker healthcheck
@@ -97,7 +98,7 @@ check, the automerge step merges immediately and unreviewed.
 | From | To | Nature |
 |---|---|---|
 | `Dockerfile` CMD | `dehydrated` | Invokes, then `exec supercronic` regardless of outcome |
-| `/etc/crontabs/dehydrated` | `dehydrated` | `supercronic` invokes it daily at 02:00 UTC |
+| `/etc/crontabs/dehydrated` | `dehydrated` | `supercronic` invokes it daily at 02:00 container time (UTC unless `TZ` is set) |
 | `watch-upstream.yml` `RUNTIME_PACKAGES` | `Dockerfile` `apk add` | Must list the same packages minus `git`. Kept in step by hand only |
 | `Dockerfile` HEALTHCHECK | `healthcheck` | Invokes every 6h |
 | `healthcheck` | `dehydrated` | Reads the status file it writes |

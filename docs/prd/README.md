@@ -25,7 +25,7 @@ certificates fresh without operator interaction. It clones the
 [dehydrated](https://github.com/dehydrated-io/dehydrated) ACME client and the
 [letsencrypt-cloudflare-hook](https://github.com/SeattleDevs/letsencrypt-cloudflare-hook) DNS-01
 hook at build time, adds a bash script that wires them together, and runs that script from its own
-crontab under `supercronic` at 02:00 UTC. The base image is Chainguard's `wolfi-base`.
+crontab under `supercronic` at 02:00 container time, which is UTC unless `TZ` is set. The base image is Chainguard's `wolfi-base`.
 
 The consumer is an operator who owns DNS for one or more domains in CloudFlare and needs Let's
 Encrypt certificates on disk for another service to read. They run one `docker create` with a
@@ -47,7 +47,7 @@ repository inactivity, freezing the published image for roughly 4.5 months.
 |---|---|---|---|---|
 | Container image | Infrastructure as code (container image) | the image | 1 | `Dockerfile`, published by `.github/workflows/docker.yml` |
 | Runtime configuration | Config and policy | the config domain | 1 | env reads and volume declarations in `dehydrated` and `Dockerfile` |
-| Certificate renewal | Background job | the job | 1 | scheduled by `/etc/crontabs/dehydrated`, written by `Dockerfile:42-43` |
+| Certificate renewal | Background job | the job | 1 | scheduled by `/etc/crontabs/dehydrated`, written by `Dockerfile:43-44` |
 | Upstream watcher | Background job (CI) | the workflow | 1 | `.github/workflows/watch-upstream.yml` |
 | Image publish | Background job (CI) | the workflow | 1 | `.github/workflows/docker.yml` |
 | Vulnerability scan | Background job (CI) | the workflow | 1 | `.github/workflows/anchore.yml` |
@@ -111,7 +111,7 @@ produces or guards the artifact.
 
 | # | Job | Schedule | Trigger | Writes | Doc |
 |---|---|---|---|---|---|
-| 1 | Certificate renewal | container start, then daily at 02:00 UTC | `Dockerfile` CMD, `/etc/crontabs/dehydrated` | `/dehydrated/certs`, `/dehydrated/accounts`, `/run/dehydrated.status` | [->](./pages/03-certificate-renewal-job.md) |
+| 1 | Certificate renewal | container start, then daily at 02:00 container time (UTC unless `TZ` is set) | `Dockerfile` CMD, `/etc/crontabs/dehydrated` | `/dehydrated/certs`, `/dehydrated/accounts`, `/run/dehydrated.status` | [->](./pages/03-certificate-renewal-job.md) |
 | 2 | Upstream watcher | `0 */12 * * *` plus manual | schedule, `workflow_dispatch` | `.upstream-state.json` on `upstream-state` | [->](./pages/20-ci-upstream-watcher.md) |
 | 3 | Image publish | on demand from the watcher, plus push to `main` | `workflow_call`, `push`, `workflow_dispatch` | Docker Hub tags | [->](./pages/21-ci-image-publish.md) |
 | 4 | Vulnerability scan | `24 5 * * 4` plus push and PR to `main` | schedule, `push`, `pull_request` | GitHub code scanning SARIF | [->](./pages/22-ci-vulnerability-scan.md) |
@@ -143,8 +143,8 @@ The container runs as root: there is no `USER` directive, which is what allows t
 - **Failure is soft and observable.** The renewal script exits 0 in normal operation; failures
   surface through the status file and the Docker health status.
 - **Both persistent paths are volumes.** `/dehydrated/certs` and `/dehydrated/accounts`.
-- **Times:** everything is UTC. CI cron expressions are UTC by definition; the in-container job
-  is 02:00 UTC because the image has no time zone data, so `TZ` has no effect. See
+- **Times:** CI cron expressions are UTC. The in-container job is 02:00 container time: UTC by
+  default, or the zone named by `TZ`, which works because the image installs `tzdata`. See
   [BL-RENEW-011](../BUSINESS-LOGIC.md#bl-renew-011).
 - **All configuration is environment plus mounts.** No config file, no flags, no runtime API.
 
@@ -153,7 +153,7 @@ The container runs as root: there is no `USER` directive, which is what allows t
 | Dependency | Kind | Pinned | Consequence |
 |---|---|---|---|
 | `cgr.dev/chainguard/wolfi-base` | Base image | No | Published for `amd64` and `arm64` only, which sets the platform list |
-| Wolfi packages (`curl openssl bash python-3 supercronic`) | apk packages | No | CVE fixes arrive on rebuild; a Python version jump arrives unannounced and the watcher emits a notice |
+| Wolfi packages (`curl openssl bash python-3 supercronic tzdata`) | apk packages | No | CVE fixes arrive on rebuild; a Python version jump arrives unannounced and the watcher emits a notice |
 | `dehydrated-io/dehydrated` | Build-time clone, branch `master` | No | Renewal semantics defined upstream |
 | `SeattleDevs/letsencrypt-cloudflare-hook` | Build-time clone, branch `main` | No | Publishes no releases, so only commit tracking is possible |
 | Hook `requirements.txt` | Python packages | No | Resolved from PyPI at build |
@@ -178,7 +178,7 @@ The container runs as root: there is no `USER` directive, which is what allows t
 | HTTP endpoints | 0 | 0 | Nothing binds a port. Affirmative finding |
 | Webhooks, real-time channels | 0 | 0 | None found |
 | Automated tests | 4 CI steps | 4 | Smoke, fail-soft regression, domains-file mode, and CF_HOST forms, in `build-check.yml` |
-| Open UNKNOWNs | 2 | 2 | see [open-questions.md](./appendix/open-questions.md) |
+| Open UNKNOWNs | 1 | 1 | see [open-questions.md](./appendix/open-questions.md) |
 
 ### Appendix layout note
 
