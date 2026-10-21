@@ -101,8 +101,10 @@ with no pin.
 
 **Rule:** The hook's Python dependencies are installed into the image's global site-packages
 from the hook's own `requirements.txt`. No virtualenv is used and no dependency is pinned
-by this repository.
-**Enforced:** `Dockerfile:35`.
+by this repository. The one override is `certifi`, which upstream pins exactly; it is upgraded to
+the latest PyPI release straight after, because the upstream pin lagged a vulnerability fix.
+**Enforced:** `Dockerfile`, the `pip3 install -r` step and the `pip3 install --upgrade certifi`
+line after it.
 **Note:** `pip3` is removed after this step ([BL-IMG-017](#bl-img-017)), so the installed packages
 cannot be listed with pip in the final image. They remain importable from the system site-packages.
 **Test:** the dependency set is defined externally; assert only that

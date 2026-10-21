@@ -30,6 +30,8 @@ COPY healthcheck /usr/local/bin/healthcheck
 # .github/workflows/watch-upstream.yml, which fingerprints it to decide when to
 # rebuild. Wolfi's busybox has no crond, so supercronic runs the daily job.
 # wolfi-base ships no time zone data; tzdata lets TZ move the 02:00 run.
+# The hook pins certifi exactly and that pin trails vulnerability fixes, so it is
+# upgraded to the latest release afterwards; requests only sets a minimum.
 RUN apk add --no-cache curl openssl bash git python-3 py3-pip supercronic tzdata && \
     cd / && \
     git clone https://github.com/dehydrated-io/dehydrated && \
@@ -37,6 +39,7 @@ RUN apk add --no-cache curl openssl bash git python-3 py3-pip supercronic tzdata
     mkdir hooks && \
     git clone https://github.com/SeattleDevs/letsencrypt-cloudflare-hook hooks/cloudflare && \
     pip3 install -r hooks/cloudflare/requirements.txt && \
+    pip3 install --upgrade certifi && \
     printf 'dehydrated=%s\nhook=%s\nbuilt=%s\n' \
       "$(git -C /dehydrated rev-parse HEAD)" \
       "$(git -C /dehydrated/hooks/cloudflare rev-parse HEAD)" \
