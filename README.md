@@ -56,7 +56,8 @@ docker create \
   kjake/dehydrated-cloudflare-cron
 ```
 
-Then start the container, which runs once at start and daily at 02:00 container-local time after that:
+Then start the container, which runs once at start and daily at 02:00 container-local time after that.
+That is UTC unless you add `-e TZ=Area/City` (for example `-e TZ=America/New_York`) to `docker create`:
 ```shell
 docker start dehydrated
 ```
@@ -125,10 +126,15 @@ Published to Docker Hub as `kjake/dehydrated-cloudflare-cron`:
 - `u<state>` is an immutable tag identifying the exact combination of dehydrated, hook, and base
   image that went into that build. Use it to pin or roll back.
 
-Nothing in this image is version-pinned: it tracks the default branch of both upstream projects
-and the floating `python:alpine` base. A [watcher workflow](.github/workflows/watch-upstream.yml)
-checks every 12 hours and rebuilds when any of the three changes. Each image records what it
-contains in its OCI labels and in `/etc/dehydrated-build-info`:
+Images are published for `linux/amd64` and `linux/arm64` only, the platforms Wolfi supports.
+
+Nothing in this image is version-pinned: it tracks the default branch of both upstream projects,
+the floating [Chainguard wolfi-base](https://images.chainguard.dev/directory/image/wolfi-base/overview)
+image, and the latest Wolfi packages, so each rebuild picks up the newest patched versions.
+[supercronic](https://github.com/aptible/supercronic) runs the daily job, because Wolfi's busybox
+has no `crond`. A [watcher workflow](.github/workflows/watch-upstream.yml) checks every 12 hours
+and rebuilds when any of these changes. Each image records what it contains in its OCI labels and
+in `/etc/dehydrated-build-info`:
 
 ```shell
 docker run --rm kjake/dehydrated-cloudflare-cron cat /etc/dehydrated-build-info

@@ -112,13 +112,17 @@ the repository active enough that GitHub does not disable the schedule.
 |---|---|---|
 | `dehydrated_revision` | 40-char commit sha | `a1b2c3...` |
 | `hook_revision` | 40-char commit sha | `d4e5f6...` |
-| `base_digest` | image digest | `sha256:...` |
-| `python_version` | major.minor | `3.14` |
+| `base_digest` | `wolfi-base` image digest | `sha256:...` |
+| `packages_digest` | 12 hex chars, fingerprint of the resolved package set | `7c41e09ab2d3` |
+| `python_version` | major.minor of the resolved `python-3.x` package | `3.13` |
 | `state_key` | 12 hex chars | `0f3c9d2e5b71` |
 | `updated` | UTC ISO-8601 | `2026-09-16T06:00:00Z` |
 
-`state_key` is the first 12 hex characters of the SHA-256 of the three identities concatenated,
-and becomes the immutable image tag `u<state_key>`.
+`state_key` is the first 12 hex characters of the SHA-256 of the four identities, newline-joined
+in the order dehydrated, hook, base digest, packages digest, and becomes the immutable image tag
+`u<state_key>`. Files written before 2026-10-21 have no `packages_digest`; the watcher reads only
+`state_key` and `python_version`, so an old file is still readable and simply fails to match. See
+[BL-CI-016](../../BUSINESS-LOGIC.md#bl-ci-016).
 
 ## `/etc/dehydrated-build-info`
 

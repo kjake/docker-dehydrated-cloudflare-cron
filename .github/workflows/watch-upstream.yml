@@ -4,8 +4,9 @@ name: Watch upstreams
 #
 # Everything this image contains is cloned or pulled unpinned at build time, so
 # nothing in this repository records what a published image holds. This workflow
-# watches the three upstream inputs and rebuilds only when one of them actually
-# moves, then commits what it built.
+# watches the upstream inputs (both clones, the base image, and the Wolfi package
+# set) and rebuilds only when one of them actually moves, then commits what it
+# built.
 #
 # That commit is load-bearing beyond bookkeeping: GitHub disables scheduled
 # workflows in public repositories after 60 days with no repository activity,
@@ -34,6 +35,11 @@ env:
   # owner organization"). Pushing here keeps the default branch fully protected
   # and needs no long-lived credential.
   STATE_BRANCH: upstream-state
+  BASE_IMAGE: cgr.dev/chainguard/wolfi-base
+  # Must match the unpinned apk add in the Dockerfile, minus git, which is
+  # removed after the build. Wolfi ships CVE fixes as package updates that do
+  # not move the base image digest, so the resolved package set is watched too.
+  RUNTIME_PACKAGES: curl openssl bash python-3 py3-pip supercronic tzdata
 
 jobs:
   check:
@@ -43,6 +49,7 @@ jobs:
       dehydrated_revision: ${{ steps.resolve.outputs.dehydrated_revision }}
       hook_revision: ${{ steps.resolve.outputs.hook_revision }}
       base_digest: ${{ steps.resolve.outputs.base_digest }}
+      packages_digest: ${{ steps.resolve.outputs.packages_digest }}
       python_version: ${{ steps.resolve.outputs.python_version }}
       state_key: ${{ steps.resolve.outputs.state_key }}
     steps:
@@ -60,25 +67,37 @@ jobs:
 
           dehydrated_revision=$(gh api repos/dehydrated-io/dehydrated/commits/master --jq .sha)
           hook_revision=$(gh api repos/SeattleDevs/letsencrypt-cloudflare-hook/commits/main --jq .sha)
-          base_digest=$(docker buildx imagetools inspect python:alpine --format '{{.Manifest.Digest}}')
-          python_version=$(docker run --rm python:alpine python3 -c \
-            'import sys; print("%d.%d" % sys.version_info[:2])')
+          base_digest=$(docker buildx imagetools inspect "${BASE_IMAGE}" --format '{{.Manifest.Digest}}')
 
-          state_key=$(printf '%s\n%s\n%s\n' \
-            "${dehydrated_revision}" "${hook_revision}" "${base_digest}" \
+          # Resolve the package set exactly as the build would, then fingerprint
+          # the installed name-version list.
+          package_list=$(docker run --rm "${BASE_IMAGE}@${base_digest}" sh -c \
+            "apk add --no-cache -q ${RUNTIME_PACKAGES} >/dev/null && apk info -v | sort")
+          packages_digest=$(printf '%s\n' "${package_list}" | sha256sum | cut -c1-12)
+          python_version=$(printf '%s\n' "${package_list}" \
+            | sed -n 's/^python-\(3\.[0-9]*\)-3\..*/\1/p' | head -n1)
+          if [ -z "${python_version}" ]; then
+            echo "::error::could not find the python-3.x package in the resolved package set"
+            exit 1
+          fi
+
+          state_key=$(printf '%s\n%s\n%s\n%s\n' \
+            "${dehydrated_revision}" "${hook_revision}" "${base_digest}" "${packages_digest}" \
             | sha256sum | cut -c1-12)
 
           {
             echo "dehydrated_revision=${dehydrated_revision}"
             echo "hook_revision=${hook_revision}"
             echo "base_digest=${base_digest}"
+            echo "packages_digest=${packages_digest}"
             echo "python_version=${python_version}"
             echo "state_key=${state_key}"
           } >> "$GITHUB_OUTPUT"
 
           echo "dehydrated : ${dehydrated_revision}"
           echo "hook       : ${hook_revision}"
-          echo "base       : ${base_digest} (Python ${python_version})"
+          echo "base       : ${base_digest}"
+          echo "packages   : ${packages_digest} (Python ${python_version})"
           echo "state key  : ${state_key}"
 
       - name: Compare against recorded state
@@ -99,10 +118,10 @@ jobs:
             exit 0
           fi
 
-          # The base image floats, so a Python major or minor jump arrives with
-          # no warning. Surface it rather than letting it land silently.
+          # Packages float, so a Python major or minor jump arrives with no
+          # warning. Surface it rather than letting it land silently.
           if [ -n "${previous_python}" ] && [ "${previous_python}" != "${PYTHON_VERSION}" ]; then
-            echo "::notice title=Python version changed::Base image moved from Python ${previous_python} to ${PYTHON_VERSION}"
+            echo "::notice title=Python version changed::Wolfi's python-3 moved from Python ${previous_python} to ${PYTHON_VERSION}"
           fi
 
           if [ "${previous_key}" = "${STATE_KEY}" ]; then
@@ -141,6 +160,7 @@ jobs:
           DEHYDRATED_REVISION: ${{ needs.check.outputs.dehydrated_revision }}
           HOOK_REVISION: ${{ needs.check.outputs.hook_revision }}
           BASE_DIGEST: ${{ needs.check.outputs.base_digest }}
+          PACKAGES_DIGEST: ${{ needs.check.outputs.packages_digest }}
           PYTHON_VERSION: ${{ needs.check.outputs.python_version }}
           STATE_KEY: ${{ needs.check.outputs.state_key }}
         run: |
@@ -149,10 +169,11 @@ jobs:
             --arg dehydrated_revision "${DEHYDRATED_REVISION}" \
             --arg hook_revision "${HOOK_REVISION}" \
             --arg base_digest "${BASE_DIGEST}" \
+            --arg packages_digest "${PACKAGES_DIGEST}" \
             --arg python_version "${PYTHON_VERSION}" \
             --arg state_key "${STATE_KEY}" \
             --arg updated "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            '{$dehydrated_revision, $hook_revision, $base_digest, $python_version, $state_key, $updated}' \
+            '{$dehydrated_revision, $hook_revision, $base_digest, $packages_digest, $python_version, $state_key, $updated}' \
             > "${RUNNER_TEMP}/state.json"
           cat "${RUNNER_TEMP}/state.json"
 

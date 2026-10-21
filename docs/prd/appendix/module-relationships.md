@@ -7,16 +7,17 @@ and where the boundary to external code lies.
 
 ```
 Dockerfile
-├── python:alpine                                  external, floating tag
+├── cgr.dev/chainguard/wolfi-base                  external, bare name, no tag or digest
 ├── dehydrated              (this repo)            -> /etc/periodic/daily/dehydrated
 ├── healthcheck             (this repo)            -> /usr/local/bin/healthcheck
-├── apk: curl openssl bash                         runtime packages
-├── apk: git                                       build only, removed in the same layer
+├── apk: curl openssl bash python-3 supercronic     runtime packages, unpinned
+├── apk: git py3-pip                               build only, removed in the same layer
 ├── dehydrated-io/dehydrated        branch master  external, unpinned -> /dehydrated
 ├── SeattleDevs/letsencrypt-cloudflare-hook
 │                                   branch main    external, unpinned -> /dehydrated/hooks/cloudflare
 ├── pip3 -r hooks/cloudflare/requirements.txt      external, unpinned
-└── /etc/dehydrated-build-info                     records the two cloned commits
+├── /etc/dehydrated-build-info                     records the two cloned commits
+└── /etc/crontabs/dehydrated                       0 2 * * * /etc/periodic/daily/dehydrated
 ```
 
 ## Runtime call tree
@@ -35,8 +36,8 @@ docker start
     │   │       └── CloudFlare v4 API              external network
     │   ├── chown / chmod on certs                 guarded on certs existing
     │   └── write /run/dehydrated.status
-    └── exec crond -f                              becomes PID 1, always reached
-        └── run-parts /etc/periodic/daily          02:00 container-local
+    └── exec supercronic /etc/crontabs/dehydrated  becomes PID 1, always reached
+        └── 0 2 * * *                              02:00 UTC; TZ has no effect
             └── /etc/periodic/daily/dehydrated     same pipeline
 
 docker healthcheck
@@ -48,7 +49,7 @@ docker healthcheck
 
 ```
 schedule (12h) ─> watch-upstream.yml
-                    ├── check      resolve 3 upstream identities, compare to .upstream-state.json
+                    ├── check      resolve 4 upstream identities, compare to .upstream-state.json
                     ├── publish ──> docker.yml (workflow_call)  ──> Docker Hub
                     ├── record     commit state to upstream-state branch (keeps repo active)
                     └── heartbeat  empty commit if quiet 50 days
@@ -56,7 +57,7 @@ schedule (12h) ─> watch-upstream.yml
 push to main ──> docker.yml            (paths-ignore: state file, docs, markdown, LICENSE)
                └─> anchore.yml           build + Grype + SARIF
 
-pull request ────> build-check.yml       REQUIRED CHECK: build + 3 test steps
+pull request ────> build-check.yml       REQUIRED CHECK: build + 4 test steps
                └─> anchore.yml
 
 dependabot ──────> grouped PR ──> build-check.yml ──> dependabot-automerge.yml ──> merged
@@ -70,10 +71,10 @@ check, the automerge step merges immediately and unreviewed.
 
 | Unit | Owns | Does not own |
 |---|---|---|
-| `Dockerfile` | Package set, filesystem layout, container command, volumes, health check, provenance labels | The content of either cloned project, the base image's cron schedule |
+| `Dockerfile` | Package set, filesystem layout, daily schedule (`/etc/crontabs/dehydrated`), container command, volumes, health check, provenance labels | The content of either cloned project, package versions |
 | `dehydrated` | Credential preflight, domain selection, fixed client arguments, certificate ownership and modes, run status | Certificate issuance, DNS record management, renewal thresholds |
 | `healthcheck` | Translating the status file into a Docker health result | Anything about why a run failed |
-| `watch-upstream.yml` | When to rebuild, what identity a build has, keeping the repo active | How to build |
+| `watch-upstream.yml` | When to rebuild, what identity a build has, the watched package list (`RUNTIME_PACKAGES`), keeping the repo active | How to build |
 | `docker.yml` | How to build, which platforms, which tags | Whether a build is needed |
 | `build-check.yml` | The merge gate and the only automated tests | Publishing |
 | `anchore.yml` | Which findings are reported | Whether anything is blocked (nothing is) |
@@ -95,13 +96,15 @@ check, the automerge step merges immediately and unreviewed.
 
 | From | To | Nature |
 |---|---|---|
-| `Dockerfile` CMD | `dehydrated` | Invokes, then `exec crond` regardless of outcome |
+| `Dockerfile` CMD | `dehydrated` | Invokes, then `exec supercronic` regardless of outcome |
+| `/etc/crontabs/dehydrated` | `dehydrated` | `supercronic` invokes it daily at 02:00 UTC |
+| `watch-upstream.yml` `RUNTIME_PACKAGES` | `Dockerfile` `apk add` | Must list the same packages minus `git`. Kept in step by hand only |
 | `Dockerfile` HEALTHCHECK | `healthcheck` | Invokes every 6h |
 | `healthcheck` | `dehydrated` | Reads the status file it writes |
 | `dehydrated` | runtime configuration | Reads `CF_HOST`, `PUID`, `PGID`; checks credential presence |
 | `dehydrated` | `Dockerfile` volumes | Depends on `certs` existing, and guards when it does not |
 | `dehydrated` | absence of `USER` | Depends on running as root for the `chown` |
-| `watch-upstream.yml` | `docker.yml` | Calls it and passes the three identities |
+| `watch-upstream.yml` | `docker.yml` | Calls it and passes three of the four identities, plus `state_key` |
 | `dependabot-automerge.yml` | `build-check.yml` | Depends on it being a required check for safety |
 | `README.md` | `dehydrated` | Documents the two `CF_HOST` forms the script implements |
 

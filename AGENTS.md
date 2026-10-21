@@ -85,8 +85,8 @@ Do not treat these as settled.
 
 ## Open decisions
 
-- Whether to restore `linux/mips64le`. Removed in commit 9a4a1cd with the message "Tweak buildx",
-  reason unrecorded. Left out for now.
+- ~~Whether to restore `linux/mips64le`.~~ Moot since the move to wolfi-base (2026-10-21), which
+  is published for `amd64` and `arm64` only.
 - Whether the heartbeat needs a more reliable mechanism than a side-branch commit (see above).
 
 ## Skills for the next session
@@ -159,3 +159,18 @@ undercounted stale citations for the same reason: it tested something adjacent t
 be part of the ruleset source or owner organization."* A workflow that must write to a protected
 branch therefore needs either a stored PAT or somewhere else to write. This repo chose the latter,
 so the watcher writes to `upstream-state` and no long-lived credential exists anywhere.
+
+### 2026-10-21: Move the base image from python:alpine to wolfi-base
+
+**Decision:** build on `cgr.dev/chainguard/wolfi-base` with unpinned Wolfi packages, run the daily
+job with `supercronic`, and publish `linux/amd64` and `linux/arm64` only.
+**Rationale:** Wolfi ships CVE fixes quickly, and leaving packages unpinned means every rebuild
+takes them. Pinning exact versions would freeze known-vulnerable packages in place, which defeats
+the point. Wolfi's busybox (including `busybox-full`) has no `crond`, so `supercronic` replaced it;
+it passes the container environment to jobs, which the hook needs for credentials. Wolfi publishes
+no other architectures, so 386, arm/v6, arm/v7, ppc64le and s390x were dropped.
+**Consequence for the watcher:** a Wolfi package update does not move the wolfi-base digest, so
+the watcher also fingerprints the resolved runtime package set (`RUNTIME_PACKAGES` in
+`watch-upstream.yml`, which must stay in step with the Dockerfile's `apk add`).
+**Next time:** `docs/prd/` and `docs/BUSINESS-LOGIC.md` still describe the Alpine base, busybox
+`crond` and seven platforms. Regenerate them with **prd-from-source** rather than hand-editing.

@@ -30,7 +30,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       # Single platform on purpose: this gates correctness, not portability, and
-      # emulating seven architectures would make every PR slow.
+      # emulating the second architecture would make every PR slow.
       - name: Build image
         uses: docker/build-push-action@v7
         with:
@@ -48,8 +48,9 @@ jobs:
             test ! -s /dehydrated/domains.txt
             test -x /dehydrated/dehydrated
             test -f /dehydrated/hooks/cloudflare/hook.py
-            command -v crond >/dev/null
+            supercronic -test /etc/crontabs/dehydrated
             command -v bash >/dev/null
+            ! command -v pip3 >/dev/null
             ! command -v git >/dev/null
             cat /etc/dehydrated-build-info
             # No run has happened yet, so the healthcheck must report unhealthy.

@@ -5,7 +5,7 @@
 # on the certificate store so other containers sharing the volume can read it.
 #
 # Runs twice in a container's life: once synchronously at start (Dockerfile CMD)
-# and then daily from /etc/periodic/daily via busybox crond (02:00 local time).
+# and then daily via supercronic and /etc/crontabs/dehydrated (02:00 local time).
 #
 # This script deliberately exits 0 even when issuance fails, so that a transient
 # CloudFlare or ACME outage does not tear the container down. Failure is reported
@@ -18,9 +18,9 @@ HOOK=hooks/cloudflare/hook.py
 STATUS_FILE=/run/dehydrated.status
 
 # Ownership applied to the certificate store. Defaults reproduce the historical
-# behaviour exactly. Note Alpine's nogroup is GID 65533 while nobody's own
-# primary group is GID 65534, so the default pair is intentionally mismatched
-# for backwards compatibility. Numeric values are passed straight through, so a
+# behaviour exactly. Note Wolfi's nogroup, like Alpine's, is GID 65533 while
+# nobody's own primary group is GID 65534, so the default pair is intentionally
+# mismatched for backwards compatibility. Numeric values are passed straight through, so a
 # GID with no matching group entry works.
 PUID="${PUID:-nobody}"
 PGID="${PGID:-nogroup}"

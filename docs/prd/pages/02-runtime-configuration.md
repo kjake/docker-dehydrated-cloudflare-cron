@@ -58,7 +58,10 @@ alone fails at the initial zone lookup.
 | `CF_SETTLE_TIME` | integer (seconds) | No | `10` | Any integer the hook accepts | Consumed by the hook |
 | `CF_DEBUG` | any | No | unset | Presence-checked | Consumed by the hook. Verbose logging |
 | `PUID` | string or numeric UID | No | `nobody` | Any user name or numeric UID | Owner applied to `certs`. Numeric values pass straight through |
-| `PGID` | string or numeric GID | No | `nogroup` | Any group name or numeric GID | Group applied to `certs`. Decides who can read private keys |
+| `PGID` | string or numeric GID | No | `nogroup` | Any group name or numeric GID | Group applied to `certs`. Decides who can read private keys. `nogroup` is GID 65533 on wolfi-base, as it was on Alpine |
+
+`TZ` is not in this table on purpose: the image has no time zone data, so setting it does not move
+the 02:00 UTC daily run. See [BL-RENEW-011](../../BUSINESS-LOGIC.md#bl-renew-011).
 
 ### Mount points
 

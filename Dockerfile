@@ -1,4 +1,4 @@
-FROM python:alpine
+FROM cgr.dev/chainguard/wolfi-base
 LABEL maintainer="kjake"
 
 # Upstream identities observed by the watcher workflow at the moment it decided
@@ -21,7 +21,12 @@ LABEL org.opencontainers.image.source="https://github.com/kjake/docker-dehydrate
 COPY dehydrated /etc/periodic/daily/dehydrated
 COPY healthcheck /usr/local/bin/healthcheck
 
-RUN apk add --no-cache curl openssl bash git && \
+# Packages are left unpinned on purpose so each rebuild picks up Wolfi's latest
+# patched versions. Keep this list in step with RUNTIME_PACKAGES in
+# .github/workflows/watch-upstream.yml, which fingerprints it to decide when to
+# rebuild. Wolfi's busybox has no crond, so supercronic runs the daily job.
+# wolfi-base ships no time zone data; tzdata lets TZ move the 02:00 run.
+RUN apk add --no-cache curl openssl bash git python-3 py3-pip supercronic tzdata && \
     cd / && \
     git clone https://github.com/dehydrated-io/dehydrated && \
     cd dehydrated && \
@@ -32,9 +37,11 @@ RUN apk add --no-cache curl openssl bash git && \
       "$(git -C /dehydrated rev-parse HEAD)" \
       "$(git -C /dehydrated/hooks/cloudflare rev-parse HEAD)" \
       "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /etc/dehydrated-build-info && \
-    apk del git && \
+    apk del git py3-pip && \
     rm -rf /var/cache/apk/* /tmp/* /var/tmp/* ~/.cache/pip && \
     chmod +x /etc/periodic/daily/dehydrated /usr/local/bin/healthcheck && \
+    mkdir -p /etc/crontabs && \
+    echo '0 2 * * * /etc/periodic/daily/dehydrated' > /etc/crontabs/dehydrated && \
     touch /dehydrated/domains.txt
 
 # The renewal script always exits 0 so a transient failure does not stop the
@@ -43,9 +50,10 @@ RUN apk add --no-cache curl openssl bash git && \
 HEALTHCHECK --interval=6h --timeout=10s --start-period=5m \
     CMD /usr/local/bin/healthcheck
 
-# ";" rather than "&&" so crond starts even when the first run fails, and "exec"
-# so crond becomes PID 1 and receives SIGTERM from "docker stop" directly.
-CMD ["/bin/bash", "-c", "/etc/periodic/daily/dehydrated; exec crond -f"]
+# ";" rather than "&&" so supercronic starts even when the first run fails, and
+# "exec" so supercronic becomes PID 1, reaps children, and receives SIGTERM from
+# "docker stop" directly.
+CMD ["/bin/bash", "-c", "/etc/periodic/daily/dehydrated; exec supercronic /etc/crontabs/dehydrated"]
 
 VOLUME /dehydrated/certs
 

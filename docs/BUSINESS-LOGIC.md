@@ -1,7 +1,8 @@
 # dehydrated-cloudflare-cron - Business Logic
 
 > Generated: 2026-09-16 from commit 9a4a1cd, revised the same day for the
-> reliability, permission, and CI changes.
+> reliability, permission, and CI changes. Revised 2026-10-21 for the move from `python:alpine`
+> to `cgr.dev/chainguard/wolfi-base`, with facts checked against a locally built image.
 > Scope: rules and invariants enforced by this repository. Behavior owned by the two
 > externally cloned projects (dehydrated-io/dehydrated and SeattleDevs/letsencrypt-cloudflare-hook)
 > is out of scope and is marked UNKNOWN-external where it affects a rule.
@@ -13,7 +14,7 @@
 
 | Term | Meaning in this system | Backed by |
 |---|---|---|
-| Image | The published container `kjake/dehydrated-cloudflare-cron:latest` that operators pull | `Dockerfile`, `.github/workflows/docker.yml:34` |
+| Image | The published container `kjake/dehydrated-cloudflare-cron:latest` that operators pull | `Dockerfile`, `.github/workflows/docker.yml:46` |
 | Renewal script | `/etc/periodic/daily/dehydrated` inside the image, the repo file `dehydrated` | `Dockerfile` |
 | dehydrated | The upstream ACME client cloned to `/dehydrated` at build time | `Dockerfile` |
 | Hook | The CloudFlare DNS-01 hook cloned to `/dehydrated/hooks/cloudflare` | `Dockerfile` |
@@ -38,14 +39,17 @@ These must hold at all times, independent of any single run.
 5. After every run of the renewal script, every file under `certs` is readable by all
    users and every directory under `certs` is traversable by all users.
    (`dehydrated`, `dehydrated`)
-6. The image contains no `git` binary at runtime: git is installed for the build clones
-   and deleted in the same layer. (`Dockerfile`, `Dockerfile`)
+6. The image contains no `git` and no `pip3` at runtime: both are installed for the build
+   and deleted in the same layer. (`Dockerfile:28`, `Dockerfile:39`)
 
 ## Rules by area
 
 ## Image build
 
 ### BL-IMG-001
+
+> **RETIRED 2026-10-21.** The base image is now `cgr.dev/chainguard/wolfi-base`. See [BL-IMG-016](#bl-img-016).
+> The original rule is kept verbatim below because rule IDs are stable.
 
 **Rule:** The base image is the floating tag `python:alpine`, not a pinned digest or version.
 **Enforced:** `Dockerfile`.
@@ -55,6 +59,9 @@ change between two builds of an unchanged repository.
 `python3 --version` may differ with no repo change.
 
 ### BL-IMG-002
+
+> **RETIRED 2026-10-21.** The runtime package set now includes Python and `supercronic`, and `py3-pip` is removed alongside `git`. See [BL-IMG-017](#bl-img-017).
+> The original rule is kept verbatim below because rule IDs are stable.
 
 **Rule:** The runtime package set is exactly `curl`, `openssl`, `bash`. `git` is installed
 for the build and removed before the layer is committed.
@@ -95,9 +102,12 @@ with no pin.
 **Rule:** The hook's Python dependencies are installed into the image's global site-packages
 from the hook's own `requirements.txt`. No virtualenv is used and no dependency is pinned
 by this repository.
-**Enforced:** `Dockerfile`.
+**Enforced:** `Dockerfile:34`.
+**Note:** `pip3` is removed after this step ([BL-IMG-017](#bl-img-017)), so the installed packages
+cannot be listed with pip in the final image. They remain importable from the system site-packages.
 **Test:** the dependency set is defined externally; assert only that
-`pip3 show` lists packages not named anywhere in this repo.
+`python3 -c 'import requests, dns, tld'` succeeds in the final image, and that
+`/usr/lib/python3.*/site-packages` holds packages not named anywhere in this repo.
 
 ### BL-IMG-007
 
@@ -110,6 +120,9 @@ In domains-file mode the operator replaces this file with a bind mount.
 returns 0 bytes.
 
 ### BL-IMG-008
+
+> **RETIRED 2026-10-21.** The path is unchanged, but it no longer schedules anything: Wolfi's busybox has no `crond`, and the schedule is now a crontab owned by this repository. See [BL-IMG-018](#bl-img-018).
+> The original rule is kept verbatim below because rule IDs are stable.
 
 **Rule:** The renewal script is installed at `/etc/periodic/daily/dehydrated` and made executable.
 **Enforced:** `Dockerfile` copies it, `Dockerfile` runs `chmod +x`.
@@ -153,6 +166,9 @@ is empty in the new container before the first run.
 
 ### BL-IMG-012
 
+> **RETIRED 2026-10-21.** The scheduler is now `supercronic`, not `crond`. The `;` and `exec` behaviour is unchanged. See [BL-IMG-019](#bl-img-019).
+> The original rule is kept verbatim below because rule IDs are stable.
+
 **Rule:** The container command is `/etc/periodic/daily/dehydrated; exec crond -f` in exec form.
 `crond` starts regardless of the first run's outcome, and becomes PID 1.
 **Enforced:** `Dockerfile`, the `CMD` line.
@@ -190,6 +206,64 @@ container's exit status cannot signal trouble. The health status is the signal i
 records what `git clone` actually fetched. They differ only if upstream moved mid-build, and the
 next watcher run reconciles that.
 **Test:** `docker run --rm IMAGE cat /etc/dehydrated-build-info` prints three key=value lines.
+
+### BL-IMG-016
+
+**Rule:** The base image is `cgr.dev/chainguard/wolfi-base`, referenced by bare name with no tag or
+digest, and every package is installed unpinned.
+**Enforced:** `Dockerfile:1` (`FROM`), `Dockerfile:28` (`apk add` with no version constraints).
+**Supersedes:** [BL-IMG-001](#bl-img-001).
+**Why unpinned:** Wolfi ships CVE fixes as package updates, often without moving the base image
+digest. Leaving packages unpinned means each rebuild picks up the latest patched versions; the
+watcher fingerprints the resolved package set so those updates trigger a rebuild
+([BL-CI-015](#bl-ci-015)).
+**Consequence:** the Python version, the `supercronic` version, and every other package version
+can change between two builds of an unchanged repository.
+**Test:** build twice against different Wolfi package indexes; `python3 --version` may differ
+with no repo change. A build on 2026-10-21 resolved Python 3.13.16, bash 5.3.0, and
+supercronic 0.2.51.
+
+### BL-IMG-017
+
+**Rule:** The build installs `curl openssl bash git python-3 py3-pip supercronic`, then removes
+`git` and `py3-pip` in the same layer. The runtime set is `curl`, `openssl`, `bash`, `python-3`,
+and `supercronic`, plus whatever the base image provides.
+**Enforced:** `Dockerfile:28` installs, `Dockerfile:39` runs `apk del git py3-pip`.
+**Supersedes:** [BL-IMG-002](#bl-img-002).
+**Why `python-3` is listed:** wolfi-base, unlike `python:alpine`, ships no Python, and the hook is
+a Python program.
+**Test:** `supercronic -test /etc/crontabs/dehydrated` succeeds, `command -v bash` succeeds, and
+both `command -v pip3` and `command -v git` fail. These are asserted by the smoke test in
+`.github/workflows/build-check.yml:51-54`.
+
+### BL-IMG-018
+
+**Rule:** The renewal script is installed at `/etc/periodic/daily/dehydrated` and made executable.
+The path is a historical location only: nothing in the image runs `/etc/periodic/daily`. The daily
+run comes from the crontab `/etc/crontabs/dehydrated`, which this repository writes during the
+build with the single entry `0 2 * * * /etc/periodic/daily/dehydrated`.
+**Enforced:** `Dockerfile:21` copies the script, `Dockerfile:41` runs `chmod +x`,
+`Dockerfile:42-43` writes the crontab.
+**Supersedes:** [BL-IMG-008](#bl-img-008).
+**Why the path was kept:** the container command, the build check, and operator habits all name
+it. Moving it would change those for no gain.
+**Note:** busybox in wolfi-base still provides `run-parts`, but no daemon invokes it, so dropping
+another file into `/etc/periodic/daily` does not schedule it.
+**Test:** `docker run --rm IMAGE cat /etc/crontabs/dehydrated` prints exactly
+`0 2 * * * /etc/periodic/daily/dehydrated`.
+
+### BL-IMG-019
+
+**Rule:** The container command is
+`/etc/periodic/daily/dehydrated; exec supercronic /etc/crontabs/dehydrated` in exec form.
+`supercronic` starts regardless of the first run's outcome, and becomes PID 1.
+**Enforced:** `Dockerfile:55`, the `CMD` line.
+**Supersedes:** [BL-IMG-012](#bl-img-012). The `;` and `exec` semantics are unchanged; only the
+scheduler is different, because Wolfi's busybox has no `crond`.
+**Second effect:** as PID 1, `supercronic` reaps child processes and receives SIGTERM from
+`docker stop` directly. Run as anything other than PID 1 it logs
+`process reaping disabled, not pid 1`.
+**Test:** start a container whose first run fails; assert it stays up and `supercronic` is PID 1.
 
 ## Runtime configuration
 
@@ -279,9 +353,13 @@ longer emits `[: too many arguments` on every run, while still producing an iden
 and `nogroup`.
 **Enforced:** `dehydrated`, the `PUID`/`PGID` defaults and the `chown`.
 **Supersedes:** [BL-CERT-001](#bl-cert-001). The defaults reproduce the previous behaviour exactly.
-**Note on the defaults:** Alpine's `nogroup` is GID 65533 while `nobody`'s own primary group is GID
-65534, so the default pair is deliberately mismatched for backwards compatibility. On Debian
-`nogroup` is 65534, which is why this looks correct at a glance and is not.
+**Note on the defaults:** Wolfi's `nogroup` is GID 65533 while `nobody`'s own primary group is GID
+65534, the same values as Alpine, so the move off `python:alpine` did not change ownership. The
+default pair is deliberately mismatched for backwards compatibility. On Debian `nogroup` is 65534,
+which is why this looks correct at a glance and is not.
+**Verified 2026-10-21** in a built wolfi-base image: `/etc/group` has `nogroup:x:65533:` and
+`nobody:x:65534:`, and `/etc/passwd` has `nobody:x:65534:65534`. The image has no `getent`, so
+read the files directly.
 **Why it exists:** once private keys became group-readable only
 ([BL-CERT-004](#bl-cert-004)), group membership decides who can read them, so a hardcoded group
 would have forced every consumer to run as `nobody`.
@@ -339,6 +417,9 @@ and the container exits without starting `crond`.
 still exits 0 and the container stays up.
 
 ### BL-RENEW-005
+
+> **RETIRED 2026-10-21.** The daily schedule is now set by this repository, not by the base image. See [BL-RENEW-011](#bl-renew-011).
+> The original rule is kept verbatim below because rule IDs are stable.
 
 **Rule:** The renewal script runs twice per container lifecycle pattern: once synchronously
 at container start, and thereafter on the base image's daily cron schedule.
@@ -398,6 +479,20 @@ certificate such as `*.example.com` would otherwise expand against the working d
 guards its own `domains.txt` parser the same way.
 **Test:** with files matching `*.example.com` present in the working directory,
 `CF_HOST='*.example.com'` must still yield `-d *.example.com`.
+
+### BL-RENEW-011
+
+**Rule:** The renewal script runs once synchronously at container start, then daily at 02:00 UTC.
+**Enforced:** `Dockerfile:55` for the start-up run; `Dockerfile:43` writes the schedule
+`0 2 * * *` to `/etc/crontabs/dehydrated`, which `supercronic` runs.
+**Supersedes:** [BL-RENEW-005](#bl-renew-005). The schedule is now owned by this repository, so
+it no longer depends on the base image's crontab.
+**Why UTC and not container-local:** `supercronic` reads the container's time zone, and the image
+ships no time zone data (`/usr/share/zoneinfo` is absent). Setting `TZ` therefore has no effect.
+Verified 2026-10-21: with `-e TZ=America/New_York`, `supercronic -debug` still reports the next run
+as `02:00:00 +0000 UTC`. The previous `python:alpine` base did ship `/usr/share/zoneinfo`.
+**Test:** assert `/etc/crontabs/dehydrated` contains `0 2 * * *`, and that `supercronic -debug`
+reports the next run at 02:00 UTC with and without `TZ` set.
 
 ## Certificate store permissions
 
@@ -482,6 +577,9 @@ from the unpinned clones in [BL-IMG-004](#bl-img-004) and [BL-IMG-005](#bl-img-0
 
 ### BL-CI-003
 
+> **RETIRED 2026-10-21.** The manifest now covers two platforms, because wolfi-base is published for no others. See [BL-CI-014](#bl-ci-014).
+> The original rule is kept verbatim below because rule IDs are stable.
+
 **Rule:** The published manifest covers exactly seven platforms: `linux/386`, `linux/amd64`,
 `linux/arm64/v8`, `linux/arm/v6`, `linux/arm/v7`, `linux/ppc64le`, `linux/s390x`.
 **Enforced:** `.github/workflows/docker.yml:33`.
@@ -493,20 +591,20 @@ It is not part of the current contract.
 
 **Rule:** Registry authentication uses the repository secrets `DOCKER_USERNAME` and
 `DOCKER_PASSWORD`. No credential is present in the repository.
-**Enforced:** `.github/workflows/docker.yml:28-29`.
+**Enforced:** `.github/workflows/docker.yml:65-66`.
 
 ### BL-CI-005
 
 **Rule:** The vulnerability scan never fails the build.
-**Enforced:** `.github/workflows/anchore.yml:37` sets `fail-build: false`.
+**Enforced:** `.github/workflows/anchore.yml:44` sets `fail-build: false`.
 **Consequence:** a critical finding is reported to GitHub code scanning and does not block
 a merge or a publish.
 
 ### BL-CI-006
 
 **Rule:** The scan reports only `critical` severity findings that have a fix available.
-**Enforced:** `.github/workflows/anchore.yml:38` (`severity-cutoff: critical`),
-`.github/workflows/anchore.yml:39` (`only-fixed: true`).
+**Enforced:** `.github/workflows/anchore.yml:45` (`severity-cutoff: critical`),
+`.github/workflows/anchore.yml:46` (`only-fixed: true`).
 **Consequence:** high, medium, and low findings, and unfixed critical findings, are not
 surfaced.
 
@@ -536,6 +634,9 @@ and every Thursday at 05:24 UTC.
 
 ### BL-CI-009
 
+> **RETIRED 2026-10-21.** The watcher now tracks four inputs: the base image is `wolfi-base`, and the resolved package set is watched too. See [BL-CI-015](#bl-ci-015).
+> The original rule is kept verbatim below because rule IDs are stable.
+
 **Rule:** The image rebuilds when any of three upstream inputs changes: the default-branch commit
 of `dehydrated-io/dehydrated` (branch `master`), the default-branch commit of
 `SeattleDevs/letsencrypt-cloudflare-hook` (branch `main`), or the manifest digest of
@@ -549,6 +650,9 @@ changed, and recorded nothing about what it produced.
 `changed=false` and must not publish.
 
 ### BL-CI-010
+
+> **RETIRED 2026-10-21.** The `state_key` now hashes four identities, adding `packages_digest`. The recording rules are unchanged. See [BL-CI-016](#bl-ci-016).
+> The original rule is kept verbatim below because rule IDs are stable.
 
 **Rule:** The composite `state_key` is the first 12 hex characters of the SHA-256 of the three
 upstream identities concatenated. It is recorded in `.upstream-state.json` only after a successful
@@ -569,8 +673,8 @@ run still reports `changed=true`.
 pull requests are merged automatically.
 **Enforced:** `.github/dependabot.yml`, `.github/workflows/dependabot-automerge.yml`.
 **Why the scope is narrow:** Dependabot has no ecosystem that can read a `git clone` inside a
-Dockerfile `RUN` line, so it cannot see either upstream project. The base image tag carries no
-version to bump. Actions are the only dependency here it can meaningfully track, and they had
+Dockerfile `RUN` line, so it cannot see either upstream project. The base image is referenced by
+bare name with no version to bump, and Wolfi's apk packages are not a Dependabot ecosystem. Actions are the only dependency here it can meaningfully track, and they had
 rotted by up to four major versions.
 **Safety precondition:** automerge is only safe because the `build` check from
 `build-check.yml` is a required status check on `main`. Without a required check that can fail,
@@ -582,10 +686,13 @@ unreviewed and unbuilt.
 
 **Rule:** Every published build carries `latest` plus an immutable `u<state_key>` tag.
 **Enforced:** `.github/workflows/docker.yml`, the `Compute tags` step.
-**Why the tag derives from all three inputs:** a tag keyed on dehydrated alone would be reused
-when only the base image moved, silently overwriting a previous build and destroying its value
-for rollback.
-**Test:** two builds differing only in base image digest must produce different `u` tags.
+**Why the tag derives from every watched input:** a tag keyed on dehydrated alone would be reused
+when only the base image or its packages moved, silently overwriting a previous build and
+destroying its value for rollback. Since 2026-10-21 the key covers four inputs
+([BL-CI-016](#bl-ci-016)). The comments at `.github/workflows/docker.yml:26` and `:68` still say
+"three"; the code passes the key through unchanged, so the behaviour is correct.
+**Test:** two builds differing only in base image digest, or only in `packages_digest`, must
+produce different `u` tags.
 
 ### BL-CI-013
 
@@ -599,6 +706,63 @@ carrying 13 open critical CVEs. Any schedule-driven design reintroduces this fai
 keepalive.
 **Test:** assert the heartbeat job triggers when `git log -1 --format=%ct` is older than 50 days.
 
+### BL-CI-014
+
+**Rule:** The published manifest covers exactly two platforms: `linux/amd64` and `linux/arm64`.
+**Enforced:** `.github/workflows/docker.yml:88`.
+**Supersedes:** [BL-CI-003](#bl-ci-003), which listed seven.
+**Why:** `cgr.dev/chainguard/wolfi-base` is published only for those two architectures, so no
+other platform can be built from it. Operators on `386`, `arm/v6`, `arm/v7`, `ppc64le`, or `s390x`
+lost support with the base image change; earlier published tags still carry those platforms.
+**Test:** `docker manifest inspect kjake/dehydrated-cloudflare-cron:latest` lists two entries
+(plus any attestation manifests).
+
+### BL-CI-015
+
+**Rule:** The image rebuilds when any of four watched inputs changes: the default-branch commit of
+`dehydrated-io/dehydrated` (branch `master`), the default-branch commit of
+`SeattleDevs/letsencrypt-cloudflare-hook` (branch `main`), the manifest digest of
+`cgr.dev/chainguard/wolfi-base`, or `packages_digest`. The check runs every 12 hours.
+**Enforced:** `.github/workflows/watch-upstream.yml:68-70` resolves the first three;
+`.github/workflows/watch-upstream.yml:74-76` computes the fourth.
+**Supersedes:** [BL-CI-009](#bl-ci-009).
+**`packages_digest`:** the watcher starts the base image at the digest it just resolved, runs
+`apk add --no-cache` for `RUNTIME_PACKAGES` (`.github/workflows/watch-upstream.yml:42`, currently
+`curl openssl bash python-3 py3-pip supercronic`), sorts the `apk info -v` name-version list, and
+keeps the first 12 hex characters of its SHA-256.
+**Why the package set is watched:** Wolfi ships CVE fixes as package updates that need not move
+the base image digest. Watching the digest alone would miss them.
+**Python version:** read from the resolved `python-3.x` package name
+(`.github/workflows/watch-upstream.yml:77-78`). If no such package is found the job fails
+(`.github/workflows/watch-upstream.yml:79-82`). The version feeds only the change notice, not the
+state key.
+**Keep in step:** `RUNTIME_PACKAGES` must list the Dockerfile's `apk add` set minus `git`
+(`Dockerfile:24-28`). Nothing enforces this; a package added to only one side is installed but
+not watched.
+**Note:** the two upstreams use different default branch names. Do not assume one for the other.
+**Test:** run the workflow twice with no upstream movement; the second run must report
+`changed=false` and must not publish.
+
+### BL-CI-016
+
+**Rule:** The composite `state_key` is the first 12 hex characters of the SHA-256 of the four
+watched identities, newline-joined in the order dehydrated, hook, base digest, packages digest.
+It is recorded in `.upstream-state.json` only after a successful publish.
+**Enforced:** `.github/workflows/watch-upstream.yml:84-86` computes it; the `record` job
+(`.github/workflows/watch-upstream.yml:148-194`) writes it, gated on
+`needs.publish.result == 'success'` at `.github/workflows/watch-upstream.yml:150`.
+**Supersedes:** [BL-CI-010](#bl-ci-010).
+**Where state lives:** a dedicated `upstream-state` branch, not the default branch: a ruleset
+requires a pull request there, and GitHub Actions cannot be granted a bypass on a personal
+repository. A run on 2026-09-16 confirmed this by being rejected with `GH013 ... Changes must be
+made through a pull request` after a successful publish.
+**Migration effect:** the key's inputs changed, so the first watcher run after the wolfi-base move
+cannot match the recorded key and always rebuilds.
+**Why the ordering matters:** recording before the publish succeeded would mark a failed build as
+done and skip the retry on the next run.
+**Test:** force the publish job to fail; assert `.upstream-state.json` is unchanged and the next
+run still reports `changed=true`.
+
 ## State machines
 
 ### Container startup
@@ -608,13 +772,13 @@ Source: `Dockerfile` (`CMD`), `dehydrated`.
 | From | To | Trigger | Guard | Side effects |
 |---|---|---|---|---|
 | created | first-run | `docker start` | none | renewal script runs synchronously |
-| first-run | scheduled | script finishes | always, because the command uses `;` not `&&` | `crond` starts as PID 1 and holds the container open |
-| first-run | exited | script exits non-zero | only when `/dehydrated` cannot be entered | container exits; this is a broken image, not a runtime failure |
-| scheduled | scheduled | daily cron at 02:00 container-local | none | script runs again, permissions reapplied, status file rewritten |
+| first-run | scheduled | script finishes | always, because the command uses `;` not `&&` | `supercronic` starts as PID 1 and holds the container open |
+| first-run | scheduled | script exits non-zero | only when `/dehydrated` cannot be entered (`dehydrated:37-40`) | a broken image, not a runtime failure. The `;` still starts `supercronic`, so the container stays up and each daily run fails the same way |
+| scheduled | scheduled | `supercronic` fires `0 2 * * *`, 02:00 UTC | none | script runs again, permissions reapplied, status file rewritten |
 
 The previous version had a fourth transition, `first-run -> exited` on any non-zero exit, which
 fired when `certs` did not exist. Both causes are now removed: see
-[BL-IMG-012](#bl-img-012) and [BL-RENEW-008](#bl-renew-008).
+[BL-IMG-019](#bl-img-019) and [BL-RENEW-008](#bl-renew-008).
 
 ### Health status
 
@@ -627,7 +791,7 @@ Source: `healthcheck`, `Dockerfile` (`HEALTHCHECK`).
 | any | healthy | a run records `OK` | status file's first field is `OK` |
 | healthy | unhealthy | a later run records `FAIL` | issuance failed |
 
-The container keeps running in every unhealthy state; cron retries daily.
+The container keeps running in every unhealthy state; `supercronic` retries daily.
 
 ### Certificate lifecycle
 
@@ -650,14 +814,17 @@ than deleted, so the history stays legible.
 | 4 | Unquoted expansion inside `[ ... ]` emitted `[: too many arguments` on every multi-domain run | **Fixed.** The test is quoted; the legacy value form still works. See [BL-CFG-006](#bl-cfg-006) |
 | 5 | ACME account re-registered on every run | **Fixed.** See [BL-RENEW-009](#bl-renew-009) |
 | 6 | The repo script and the upstream executable share the name `dehydrated` | **Open.** Harmless: different paths, and the script invokes `./dehydrated` after `cd`. Still makes `ps` output ambiguous |
-| 7 | `README.md` described daily renewal unconditionally, but it was gated on the first run succeeding | **Fixed.** The gate is gone ([BL-IMG-012](#bl-img-012)) and the README now states the 02:00 schedule |
+| 7 | `README.md` described daily renewal unconditionally, but it was gated on the first run succeeding | **Fixed.** The gate is gone ([BL-IMG-019](#bl-img-019)) and the README now states the 02:00 schedule |
+| 8 | `README.md:59` says the daily run is at "02:00 container-local time", which reads as if `TZ` moves it. The image has no time zone data, so it is always 02:00 UTC | **Open.** See [BL-RENEW-011](#bl-renew-011). Fix by installing `tzdata` or by rewording the README |
+| 9 | The comments at `.github/workflows/docker.yml:26` and `:68` say the immutable tag derives from "three" upstream identities; since the wolfi-base move it is four | **Open.** Comment only, behaviour is correct. See [BL-CI-016](#bl-ci-016) |
 
 ### Remaining, accepted
 
-- **Nothing is version-pinned.** The base image and both upstream projects float. This is
-  deliberate: the watcher rebuilds on change, so pinning would add maintenance without adding
-  safety. The cost is that a Python major version jump arrives unannounced; the watcher emits a
-  notice when it happens. See [BL-CI-009](#bl-ci-009).
+- **Nothing is version-pinned.** The base image, its Wolfi packages, and both upstream projects
+  float. This is deliberate: the watcher rebuilds on change, so pinning would add maintenance
+  without adding safety, and unpinned packages are how Wolfi's CVE fixes reach the image. The
+  cost is that a Python minor or major version jump arrives unannounced; the watcher emits a
+  notice when it happens. See [BL-IMG-016](#bl-img-016) and [BL-CI-015](#bl-ci-015).
 - **The default ownership pair is mismatched** (`nobody` is 65534, `nogroup` is 65533). Preserved
   for backwards compatibility rather than corrected. See [BL-CFG-007](#bl-cfg-007).
 
@@ -670,5 +837,6 @@ list, with resolution steps, is in
 - Is the world-readable private key mode at `dehydrated` intentional for consumption by
   other containers, or an over-broad recursive `chmod`? The code does not say.
 - Is the absence of an `accounts` volume ([BL-IMG-011](#bl-img-011)) deliberate or an oversight?
-- Why is the platform list what it is, and why was `linux/mips64le` removed in commit 9a4a1cd?
-  The commit message "Tweak buildx" does not say.
+- Why was `linux/mips64le` removed in commit 9a4a1cd? The commit message "Tweak buildx" does not
+  say. The wider platform question is now settled: the list is what wolfi-base publishes
+  ([BL-CI-014](#bl-ci-014)).
