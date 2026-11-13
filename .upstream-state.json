@@ -1,9 +1,9 @@
 {
   "dehydrated_revision": "48866b0e85b474e3971d6425a14212608c355c1c",
   "hook_revision": "80f6f2a50fb3e2471b8e410ef3ea9c6d98fc6bd7",
-  "base_digest": "sha256:94fa13e26d449f7d78dbcd02d12ea37a0da80d24fcc3e1f17b95d515dec607a7",
-  "packages_digest": "b13f0b8c487b",
+  "base_digest": "sha256:ae9575b121f5776e2f04e192064bc2c5665af9d1c425d620dc773aca31698712",
+  "packages_digest": "8c10f299675e",
   "python_version": "3.13",
-  "state_key": "5775393b102a",
-  "updated": "2026-11-11T19:01:26Z"
+  "state_key": "e139a6f95cc7",
+  "updated": "2026-11-13T04:05:33Z"
 }
